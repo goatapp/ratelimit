@@ -126,12 +126,6 @@ type Settings struct {
 	RedisPerSecondPoolSize   int    `envconfig:"REDIS_PERSECOND_POOL_SIZE" default:"10"`
 	RedisPerSecondAuth       string `envconfig:"REDIS_PERSECOND_AUTH" default:""`
 	RedisPerSecondTls        bool   `envconfig:"REDIS_PERSECOND_TLS" default:"false"`
-	// RedisPerSecondPipelineWindow sets the duration after which internal pipelines will be flushed for per second redis.
-	// See comments of RedisPipelineWindow for details.
-	RedisPerSecondPipelineWindow time.Duration `envconfig:"REDIS_PERSECOND_PIPELINE_WINDOW" default:"0"`
-	// RedisPerSecondPipelineLimit sets maximum number of commands that can be pipelined before flushing for per second redis.
-	// See comments of RedisPipelineLimit for details.
-	RedisPerSecondPipelineLimit int `envconfig:"REDIS_PERSECOND_PIPELINE_LIMIT" default:"0"`
 	// Enable healthcheck to check Redis Connection. If there is no active connection, healthcheck failed.
 	RedisHealthCheckActiveConnection bool `envconfig:"REDIS_HEALTH_CHECK_ACTIVE_CONNECTION" default:"false"`
 	// Memcache settings

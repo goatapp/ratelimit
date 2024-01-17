@@ -384,8 +384,7 @@ func configRedisCluster(s *settings.Settings) {
 	s.RedisAuth = "password123"
 	s.RedisPerSecondAuth = "password123"
 
-	s.RedisPerSecondPipelineLimit = 8
-	s.RedisPipelineLimit = 8
+	s.RedisImplicitPipeline = true
 }
 
 func testBasicConfigWithoutWatchRootWithRedisCluster(perSecond bool, local_cache_size int) func(*testing.T) {
