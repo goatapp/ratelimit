@@ -3,10 +3,11 @@ package redis_test
 import (
 	"context"
 	"fmt"
+	"testing"
+
 	"github.com/alicebob/miniredis/v2"
 	stats "github.com/lyft/gostats"
 	"github.com/stretchr/testify/assert"
-	"testing"
 
 	"github.com/envoyproxy/ratelimit/src/redis"
 )

@@ -4,11 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"strings"
+
 	stats "github.com/lyft/gostats"
 	"github.com/mediocregopher/radix/v4"
 	"github.com/mediocregopher/radix/v4/trace"
 	logger "github.com/sirupsen/logrus"
-	"strings"
 
 	"github.com/envoyproxy/ratelimit/src/server"
 	"github.com/envoyproxy/ratelimit/src/utils"
