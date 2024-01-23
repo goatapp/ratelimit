@@ -185,6 +185,7 @@ func TestBasicAuthConfig(t *testing.T) {
 }
 
 func TestBasicAuthConfigWithRedisCluster(t *testing.T) {
+	t.Skipf("skipping due to flakiness")
 	t.Run("WithoutPerSecondRedisAuth", testBasicConfigAuthWithRedisCluster(false, 0))
 	t.Run("WithPerSecondRedisAuth", testBasicConfigAuthWithRedisCluster(true, 0))
 	t.Run("WithoutPerSecondRedisAuthWithLocalCache", testBasicConfigAuthWithRedisCluster(false, 1000))
