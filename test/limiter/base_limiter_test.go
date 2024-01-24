@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
-	mockstats "github.com/envoyproxy/ratelimit/test/mocks/stats"
+	mockstats "github.com/goatapp/ratelimit/test/mocks/stats"
 
 	"github.com/coocood/freecache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
@@ -12,10 +12,10 @@ import (
 	stats "github.com/lyft/gostats"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/envoyproxy/ratelimit/src/config"
-	"github.com/envoyproxy/ratelimit/src/limiter"
-	"github.com/envoyproxy/ratelimit/test/common"
-	mock_utils "github.com/envoyproxy/ratelimit/test/mocks/utils"
+	"github.com/goatapp/ratelimit/src/config"
+	"github.com/goatapp/ratelimit/src/limiter"
+	"github.com/goatapp/ratelimit/test/common"
+	mock_utils "github.com/goatapp/ratelimit/test/mocks/utils"
 )
 
 func TestGenerateCacheKeys(t *testing.T) {

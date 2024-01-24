@@ -6,11 +6,11 @@ import (
 
 	"github.com/coocood/freecache"
 
-	"github.com/envoyproxy/ratelimit/src/limiter"
-	"github.com/envoyproxy/ratelimit/src/server"
-	"github.com/envoyproxy/ratelimit/src/settings"
-	"github.com/envoyproxy/ratelimit/src/stats"
-	"github.com/envoyproxy/ratelimit/src/utils"
+	"github.com/goatapp/ratelimit/src/limiter"
+	"github.com/goatapp/ratelimit/src/server"
+	"github.com/goatapp/ratelimit/src/settings"
+	"github.com/goatapp/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/utils"
 )
 
 func NewRateLimiterCacheImplFromSettings(ctx context.Context, s settings.Settings, localCache *freecache.Cache, srv server.Server,

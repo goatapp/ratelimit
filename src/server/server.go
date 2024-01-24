@@ -5,7 +5,7 @@ import (
 
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 
-	"github.com/envoyproxy/ratelimit/src/provider"
+	"github.com/goatapp/ratelimit/src/provider"
 
 	stats "github.com/lyft/gostats"
 	"google.golang.org/grpc"

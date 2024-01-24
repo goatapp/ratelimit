@@ -11,8 +11,8 @@ import (
 	"github.com/mediocregopher/radix/v4/trace"
 	logger "github.com/sirupsen/logrus"
 
-	"github.com/envoyproxy/ratelimit/src/server"
-	"github.com/envoyproxy/ratelimit/src/utils"
+	"github.com/goatapp/ratelimit/src/server"
+	"github.com/goatapp/ratelimit/src/utils"
 )
 
 type commonClient interface {

@@ -4,8 +4,8 @@ import (
 	gostats "github.com/lyft/gostats"
 	logger "github.com/sirupsen/logrus"
 
-	"github.com/envoyproxy/ratelimit/src/settings"
-	"github.com/envoyproxy/ratelimit/src/utils"
+	"github.com/goatapp/ratelimit/src/settings"
+	"github.com/goatapp/ratelimit/src/utils"
 )
 
 func NewStatManager(store gostats.Store, settings settings.Settings) *ManagerImpl {

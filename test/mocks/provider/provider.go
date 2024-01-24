@@ -9,8 +9,8 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 
-	config "github.com/envoyproxy/ratelimit/src/config"
-	provider "github.com/envoyproxy/ratelimit/src/provider"
+	config "github.com/goatapp/ratelimit/src/config"
+	provider "github.com/goatapp/ratelimit/src/provider"
 )
 
 // MockRateLimitConfigProvider is a mock of RateLimitConfigProvider interface

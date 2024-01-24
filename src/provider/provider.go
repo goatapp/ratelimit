@@ -1,7 +1,7 @@
 package provider
 
 import (
-	"github.com/envoyproxy/ratelimit/src/config"
+	"github.com/goatapp/ratelimit/src/config"
 )
 
 // RateLimitConfigProvider is the interface for configurations providers.

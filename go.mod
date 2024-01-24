@@ -1,4 +1,4 @@
-module github.com/goatapp/go-services/ratelimit
+module github.com/goatapp/ratelimit
 
 go 1.21.5
 
