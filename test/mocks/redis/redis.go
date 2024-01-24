@@ -10,8 +10,9 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 
-	redis "github.com/envoyproxy/ratelimit/src/redis"
 	radix "github.com/mediocregopher/radix/v4"
+
+	redis "github.com/envoyproxy/ratelimit/src/redis"
 )
 
 // MockClient is a mock of Client interface.
