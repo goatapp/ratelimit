@@ -9,7 +9,7 @@ import (
 	"github.com/envoyproxy/go-control-plane/pkg/server/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/test/v3"
 
-	example "github.com/envoyproxy/ratelimit/examples/xds-sotw-config-server"
+	example "github.com/goatapp/ratelimit/examples/xds-sotw-config-server"
 )
 
 var (

@@ -19,8 +19,8 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"github.com/envoyproxy/ratelimit/src/provider"
-	"github.com/envoyproxy/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/provider"
+	"github.com/goatapp/ratelimit/src/stats"
 
 	"github.com/coocood/freecache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
@@ -33,8 +33,8 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/envoyproxy/ratelimit/src/limiter"
-	"github.com/envoyproxy/ratelimit/src/settings"
+	"github.com/goatapp/ratelimit/src/limiter"
+	"github.com/goatapp/ratelimit/src/settings"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"

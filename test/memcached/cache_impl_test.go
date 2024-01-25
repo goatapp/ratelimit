@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"testing"
 
-	mockstats "github.com/envoyproxy/ratelimit/test/mocks/stats"
+	mockstats "github.com/goatapp/ratelimit/test/mocks/stats"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/coocood/freecache"
@@ -18,19 +18,19 @@ import (
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 	stats "github.com/lyft/gostats"
 
-	"github.com/envoyproxy/ratelimit/src/config"
-	"github.com/envoyproxy/ratelimit/src/limiter"
-	"github.com/envoyproxy/ratelimit/src/memcached"
-	"github.com/envoyproxy/ratelimit/src/settings"
-	"github.com/envoyproxy/ratelimit/src/trace"
-	"github.com/envoyproxy/ratelimit/src/utils"
+	"github.com/goatapp/ratelimit/src/config"
+	"github.com/goatapp/ratelimit/src/limiter"
+	"github.com/goatapp/ratelimit/src/memcached"
+	"github.com/goatapp/ratelimit/src/settings"
+	"github.com/goatapp/ratelimit/src/trace"
+	"github.com/goatapp/ratelimit/src/utils"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/envoyproxy/ratelimit/test/common"
-	mock_memcached "github.com/envoyproxy/ratelimit/test/mocks/memcached"
-	mock_utils "github.com/envoyproxy/ratelimit/test/mocks/utils"
+	"github.com/goatapp/ratelimit/test/common"
+	mock_memcached "github.com/goatapp/ratelimit/test/mocks/memcached"
+	mock_utils "github.com/goatapp/ratelimit/test/mocks/utils"
 )
 
 var testSpanExporter = trace.GetTestSpanExporter()

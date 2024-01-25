@@ -8,10 +8,10 @@ import (
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 	logger "github.com/sirupsen/logrus"
 
-	"github.com/envoyproxy/ratelimit/src/assert"
-	"github.com/envoyproxy/ratelimit/src/config"
-	"github.com/envoyproxy/ratelimit/src/stats"
-	"github.com/envoyproxy/ratelimit/src/utils"
+	"github.com/goatapp/ratelimit/src/assert"
+	"github.com/goatapp/ratelimit/src/config"
+	"github.com/goatapp/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/utils"
 )
 
 type BaseRateLimiter struct {

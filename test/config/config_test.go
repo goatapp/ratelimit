@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/envoyproxy/ratelimit/test/common"
+	"github.com/goatapp/ratelimit/test/common"
 
 	pb_struct "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
@@ -13,8 +13,8 @@ import (
 	stats "github.com/lyft/gostats"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/envoyproxy/ratelimit/src/config"
-	mockstats "github.com/envoyproxy/ratelimit/test/mocks/stats"
+	"github.com/goatapp/ratelimit/src/config"
+	mockstats "github.com/goatapp/ratelimit/test/mocks/stats"
 )
 
 func loadFile(path string) []config.RateLimitConfigToLoad {

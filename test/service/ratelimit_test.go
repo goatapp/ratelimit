@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/envoyproxy/ratelimit/src/provider"
-	"github.com/envoyproxy/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/provider"
+	"github.com/goatapp/ratelimit/src/stats"
 
-	"github.com/envoyproxy/ratelimit/src/utils"
+	"github.com/goatapp/ratelimit/src/utils"
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
@@ -23,17 +23,17 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/envoyproxy/ratelimit/src/trace"
+	"github.com/goatapp/ratelimit/src/trace"
 
-	"github.com/envoyproxy/ratelimit/src/config"
-	"github.com/envoyproxy/ratelimit/src/redis"
-	server "github.com/envoyproxy/ratelimit/src/server"
-	ratelimit "github.com/envoyproxy/ratelimit/src/service"
-	"github.com/envoyproxy/ratelimit/test/common"
-	mock_config "github.com/envoyproxy/ratelimit/test/mocks/config"
-	mock_limiter "github.com/envoyproxy/ratelimit/test/mocks/limiter"
-	mock_provider "github.com/envoyproxy/ratelimit/test/mocks/provider"
-	mock_stats "github.com/envoyproxy/ratelimit/test/mocks/stats"
+	"github.com/goatapp/ratelimit/src/config"
+	"github.com/goatapp/ratelimit/src/redis"
+	server "github.com/goatapp/ratelimit/src/server"
+	ratelimit "github.com/goatapp/ratelimit/src/service"
+	"github.com/goatapp/ratelimit/test/common"
+	mock_config "github.com/goatapp/ratelimit/test/mocks/config"
+	mock_limiter "github.com/goatapp/ratelimit/test/mocks/limiter"
+	mock_provider "github.com/goatapp/ratelimit/test/mocks/provider"
+	mock_stats "github.com/goatapp/ratelimit/test/mocks/stats"
 )
 
 type barrier struct {
