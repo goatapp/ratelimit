@@ -160,7 +160,7 @@ func (server *server) GrpcServer() *grpc.Server {
 }
 
 func (server *server) Start() {
-	go server.startGrpc()
+	server.startGrpc()
 
 	server.handleGracefulShutdown()
 }
