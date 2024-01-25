@@ -160,39 +160,9 @@ func (server *server) GrpcServer() *grpc.Server {
 }
 
 func (server *server) Start() {
-	go func() {
-		logger.Warnf("Listening for debug on '%s'", server.debugAddress)
-		var err error
-		server.listenerMu.Lock()
-		server.debugListener.listener, err = reuseport.Listen("tcp", server.debugAddress)
-		server.listenerMu.Unlock()
-
-		if err != nil {
-			logger.Errorf("Failed to open debug HTTP listener: '%+v'", err)
-			return
-		}
-		err = http.Serve(server.debugListener.listener, server.debugListener.debugMux)
-		logger.Infof("Failed to start debug server '%+v'", err)
-	}()
-
 	go server.startGrpc()
 
 	server.handleGracefulShutdown()
-
-	logger.Warnf("Listening for HTTP on '%s'", server.httpAddress)
-	list, err := reuseport.Listen("tcp", server.httpAddress)
-	if err != nil {
-		logger.Fatalf("Failed to open HTTP listener: '%+v'", err)
-	}
-	srv := &http.Server{Handler: server.router}
-	server.listenerMu.Lock()
-	server.httpServer = srv
-	server.listenerMu.Unlock()
-	err = srv.Serve(list)
-
-	if err != http.ErrServerClosed {
-		logger.Fatal(err)
-	}
 }
 
 func (server *server) startGrpc() {
