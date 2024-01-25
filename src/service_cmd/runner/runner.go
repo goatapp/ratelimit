@@ -98,8 +98,8 @@ func (runner *Runner) Run() {
 		logger.SetFormatter(&logger.JSONFormatter{
 			TimestampFormat: time.RFC3339Nano,
 			FieldMap: logger.FieldMap{
-				logger.FieldKeyTime: "@timestamp",
-				logger.FieldKeyMsg:  "@message",
+				logger.FieldKeyTime: "timestamp",
+				logger.FieldKeyMsg:  "message",
 			},
 		})
 	}
