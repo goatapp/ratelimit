@@ -31,14 +31,16 @@ import (
 )
 
 type Runner struct {
+	name         string
 	statsManager stats.Manager
 	settings     settings.Settings
 	srv          server.Server
 	mu           sync.Mutex
 }
 
-func NewRunner(s settings.Settings) Runner {
+func NewRunner(name string, s settings.Settings) Runner {
 	return Runner{
+		name:         name,
 		statsManager: stats.NewStatManager(gostats.NewDefaultStore(), s),
 		settings:     s,
 	}
@@ -111,7 +113,7 @@ func (runner *Runner) Run() {
 
 	serverReporter := metrics.NewServerReporter(runner.statsManager.GetStatsStore().ScopeWithTags("ratelimit_server", s.ExtraTags))
 
-	srv := server.NewServer(s, "ratelimit", runner.statsManager, localCache, settings.GrpcUnaryInterceptor(serverReporter.UnaryServerInterceptor()))
+	srv := server.NewServer(s, runner.name, runner.statsManager, localCache, settings.GrpcUnaryInterceptor(serverReporter.UnaryServerInterceptor()))
 	runner.mu.Lock()
 	runner.srv = srv
 	runner.mu.Unlock()

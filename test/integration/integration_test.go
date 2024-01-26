@@ -694,7 +694,7 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 
 func startTestRunner(t *testing.T, s settings.Settings) *runner.Runner {
 	t.Helper()
-	runner := runner.NewRunner(s)
+	runner := runner.NewRunner("ratelimit", s)
 
 	go func() {
 		// Catch a panic() to ensure that test name is printed.
