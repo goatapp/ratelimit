@@ -71,8 +71,8 @@ type Settings struct {
 
 	// Stats-related settings
 	UseStatsd  bool              `envconfig:"USE_STATSD" default:"true"`
-	StatsdHost string            `envconfig:"GOATENV_STATSD_TCP_HOST" default:"localhost"`
-	StatsdPort int               `envconfig:"GOATENV_STATSD_TCP_PORT" default:"8125"`
+	StatsdHost string            `envconfig:"STATSD_HOST" default:"localhost"`
+	StatsdPort int               `envconfig:"STATSD_PORT" default:"8125"`
 	ExtraTags  map[string]string `envconfig:"EXTRA_TAGS" default:""`
 
 	// Settings for rate limit configuration
