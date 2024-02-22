@@ -77,15 +77,13 @@ const (
 	userAgentKey       = "user_agent"
 )
 
-var (
-	loggableGRPCMetadata = map[string]string{
-		"x-goat-correlation-id":  correlationIdKey,
-		"x-forwarded-for":        ipAddressKey,
-		"x-forwarded-user-agent": originUserAgentKey,
-		"x-request-id":           requestIdKey,
-		"user-agent":             userAgentKey,
-	}
-)
+var loggableGRPCMetadata = map[string]string{
+	"x-goat-correlation-id":  correlationIdKey,
+	"x-forwarded-for":        ipAddressKey,
+	"x-forwarded-user-agent": originUserAgentKey,
+	"x-request-id":           requestIdKey,
+	"user-agent":             userAgentKey,
+}
 
 // nolint: gochecknoinits
 func init() {
