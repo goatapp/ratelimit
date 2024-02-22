@@ -147,12 +147,12 @@ func TestBasicConfig_ExtraTags(t *testing.T) {
 		// store.NewCounter returns the existing counter.
 		// This test looks for the extra tags requested.
 		key1HitCounter := runner.GetStatsStore().NewCounterWithTags(
-			fmt.Sprintf("ratelimit.service.rate_limit.basic.%s.total_hits", getCacheKey("key1", false)),
+			fmt.Sprintf("app.ratelimit.local.service.rate_limit.basic.%s.total_hits", getCacheKey("key1", false)),
 			extraTagsSettings.ExtraTags)
 		assert.Equal(1, int(key1HitCounter.Value()))
 
 		configLoadStat := runner.GetStatsStore().NewCounterWithTags(
-			"ratelimit.service.config_load_success",
+			"app.ratelimit.local.service.config_load_success",
 			extraTagsSettings.ExtraTags)
 		assert.Equal(1, int(configLoadStat.Value()))
 
@@ -484,10 +484,10 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 
 		// Manually flush the cache for local_cache stats
 		runner.GetStatsStore().Flush()
-		localCacheHitCounter := runner.GetStatsStore().NewGauge("ratelimit.localcache.hitCount")
+		localCacheHitCounter := runner.GetStatsStore().NewGauge("app.ratelimit.local.localcache.hitCount")
 		assert.Equal(0, int(localCacheHitCounter.Value()))
 
-		localCacheMissCounter := runner.GetStatsStore().NewGauge("ratelimit.localcache.missCount")
+		localCacheMissCounter := runner.GetStatsStore().NewGauge("app.ratelimit.local.localcache.missCount")
 		assert.Equal(0, int(localCacheMissCounter.Value()))
 
 		response, err = c.ShouldRateLimit(
@@ -507,15 +507,15 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 		assert.NoError(err)
 
 		// store.NewCounter returns the existing counter.
-		key1HitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("ratelimit.service.rate_limit.basic.%s.total_hits", getCacheKey("key1", enable_local_cache)))
+		key1HitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("app.ratelimit.local.service.rate_limit.basic.%s.total_hits", getCacheKey("key1", enable_local_cache)))
 		assert.Equal(1, int(key1HitCounter.Value()))
 
 		// Manually flush the cache for local_cache stats
 		runner.GetStatsStore().Flush()
-		localCacheHitCounter = runner.GetStatsStore().NewGauge("ratelimit.localcache.hitCount")
+		localCacheHitCounter = runner.GetStatsStore().NewGauge("app.ratelimit.local.localcache.hitCount")
 		assert.Equal(0, int(localCacheHitCounter.Value()))
 
-		localCacheMissCounter = runner.GetStatsStore().NewGauge("ratelimit.localcache.missCount")
+		localCacheMissCounter = runner.GetStatsStore().NewGauge("app.ratelimit.local.localcache.missCount")
 		if enable_local_cache {
 			assert.Equal(1, int(localCacheMissCounter.Value()))
 		} else {
@@ -549,15 +549,15 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 				},
 				response)
 			assert.NoError(err)
-			key2HitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("ratelimit.service.rate_limit.another.%s.total_hits", getCacheKey("key2", enable_local_cache)))
+			key2HitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("app.ratelimit.local.service.rate_limit.another.%s.total_hits", getCacheKey("key2", enable_local_cache)))
 			assert.Equal(i+1, int(key2HitCounter.Value()))
-			key2OverlimitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("ratelimit.service.rate_limit.another.%s.over_limit", getCacheKey("key2", enable_local_cache)))
+			key2OverlimitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("app.ratelimit.local.service.rate_limit.another.%s.over_limit", getCacheKey("key2", enable_local_cache)))
 			if i >= 20 {
 				assert.Equal(i-19, int(key2OverlimitCounter.Value()))
 			} else {
 				assert.Equal(0, int(key2OverlimitCounter.Value()))
 			}
-			key2LocalCacheOverLimitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("ratelimit.service.rate_limit.another.%s.over_limit_with_local_cache", getCacheKey("key2", enable_local_cache)))
+			key2LocalCacheOverLimitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("app.ratelimit.local.service.rate_limit.another.%s.over_limit_with_local_cache", getCacheKey("key2", enable_local_cache)))
 			if enable_local_cache && i >= 20 {
 				assert.Equal(i-20, int(key2LocalCacheOverLimitCounter.Value()))
 			} else {
@@ -566,14 +566,14 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 
 			// Manually flush the cache for local_cache stats
 			runner.GetStatsStore().Flush()
-			localCacheHitCounter = runner.GetStatsStore().NewGauge("ratelimit.localcache.hitCount")
+			localCacheHitCounter = runner.GetStatsStore().NewGauge("app.ratelimit.local.localcache.hitCount")
 			if enable_local_cache && i >= 20 {
 				assert.Equal(i-20, int(localCacheHitCounter.Value()))
 			} else {
 				assert.Equal(0, int(localCacheHitCounter.Value()))
 			}
 
-			localCacheMissCounter = runner.GetStatsStore().NewGauge("ratelimit.localcache.missCount")
+			localCacheMissCounter = runner.GetStatsStore().NewGauge("app.ratelimit.local.localcache.missCount")
 			if enable_local_cache {
 				if i < 20 {
 					assert.Equal(i+2, int(localCacheMissCounter.Value()))
@@ -623,26 +623,26 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 				response)
 			assert.NoError(err)
 
-			key2HitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("ratelimit.service.rate_limit.another.%s.total_hits", getCacheKey("key2", enable_local_cache)))
+			key2HitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("app.ratelimit.local.service.rate_limit.another.%s.total_hits", getCacheKey("key2", enable_local_cache)))
 			assert.Equal(i+26, int(key2HitCounter.Value()))
-			key2OverlimitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("ratelimit.service.rate_limit.another.%s.over_limit", getCacheKey("key2", enable_local_cache)))
+			key2OverlimitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("app.ratelimit.local.service.rate_limit.another.%s.over_limit", getCacheKey("key2", enable_local_cache)))
 			assert.Equal(5, int(key2OverlimitCounter.Value()))
-			key2LocalCacheOverLimitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("ratelimit.service.rate_limit.another.%s.over_limit_with_local_cache", getCacheKey("key2", enable_local_cache)))
+			key2LocalCacheOverLimitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("app.ratelimit.local.service.rate_limit.another.%s.over_limit_with_local_cache", getCacheKey("key2", enable_local_cache)))
 			if enable_local_cache {
 				assert.Equal(4, int(key2LocalCacheOverLimitCounter.Value()))
 			} else {
 				assert.Equal(0, int(key2LocalCacheOverLimitCounter.Value()))
 			}
 
-			key3HitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("ratelimit.service.rate_limit.another.%s.total_hits", getCacheKey("key3", enable_local_cache)))
+			key3HitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("app.ratelimit.local.service.rate_limit.another.%s.total_hits", getCacheKey("key3", enable_local_cache)))
 			assert.Equal(i+1, int(key3HitCounter.Value()))
-			key3OverlimitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("ratelimit.service.rate_limit.another.%s.over_limit", getCacheKey("key3", enable_local_cache)))
+			key3OverlimitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("app.ratelimit.local.service.rate_limit.another.%s.over_limit", getCacheKey("key3", enable_local_cache)))
 			if i >= 10 {
 				assert.Equal(i-9, int(key3OverlimitCounter.Value()))
 			} else {
 				assert.Equal(0, int(key3OverlimitCounter.Value()))
 			}
-			key3LocalCacheOverLimitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("ratelimit.service.rate_limit.another.%s.over_limit_with_local_cache", getCacheKey("key3", enable_local_cache)))
+			key3LocalCacheOverLimitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("app.ratelimit.local.service.rate_limit.another.%s.over_limit_with_local_cache", getCacheKey("key3", enable_local_cache)))
 			if enable_local_cache && i >= 10 {
 				assert.Equal(i-10, int(key3LocalCacheOverLimitCounter.Value()))
 			} else {
@@ -651,7 +651,7 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 
 			// Manually flush the cache for local_cache stats
 			runner.GetStatsStore().Flush()
-			localCacheHitCounter = runner.GetStatsStore().NewGauge("ratelimit.localcache.hitCount")
+			localCacheHitCounter = runner.GetStatsStore().NewGauge("app.ratelimit.local.localcache.hitCount")
 			if enable_local_cache {
 				if i < 10 {
 					assert.Equal(4, int(localCacheHitCounter.Value()))
@@ -663,7 +663,7 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 				assert.Equal(0, int(localCacheHitCounter.Value()))
 			}
 
-			localCacheMissCounter = runner.GetStatsStore().NewGauge("ratelimit.localcache.missCount")
+			localCacheMissCounter = runner.GetStatsStore().NewGauge("app.ratelimit.local.localcache.missCount")
 			if enable_local_cache {
 				if i < 10 {
 					// both key2 and key3 cache miss.
@@ -739,7 +739,7 @@ func testConfigReload(s settings.Settings, reloadConfFunc, restoreConfFunc func(
 		assert.NoError(err)
 
 		runner.GetStatsStore().Flush()
-		loadCountBefore := runner.GetStatsStore().NewCounter("ratelimit.service.config_load_success").Value()
+		loadCountBefore := runner.GetStatsStore().NewCounter("app.ratelimit.local.service.config_load_success").Value()
 
 		reloadConfFunc()
 		loadCountAfter, reloaded := waitForConfigReload(runner, loadCountBefore)
@@ -811,7 +811,7 @@ func waitForConfigReload(runner *runner.Runner, loadCountBefore uint64) (uint64,
 	for i := 0; i < wait; i++ {
 		time.Sleep(1 * time.Second)
 		runner.GetStatsStore().Flush()
-		loadCountAfter = runner.GetStatsStore().NewCounter("ratelimit.service.config_load_success").Value()
+		loadCountAfter = runner.GetStatsStore().NewCounter("app.ratelimit.local.service.config_load_success").Value()
 
 		// Check that successful loads count has increased before continuing.
 		if loadCountAfter > loadCountBefore {
