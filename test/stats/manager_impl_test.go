@@ -50,7 +50,7 @@ func TestEscapingInvalidChartersInMetricName(t *testing.T) {
 
 			stats.TotalHits.Inc()
 			statsManager.GetStatsStore().Flush()
-			mockSink.AssertCounterExists(t, fmt.Sprintf("ratelimit.service.rate_limit.%s.total_hits", tt.want))
+			mockSink.AssertCounterExists(t, fmt.Sprintf("app.ratelimit.local.service.rate_limit.%s.total_hits", tt.want))
 		})
 	}
 }

@@ -1,6 +1,9 @@
 package stats
 
 import (
+	"fmt"
+	"os"
+
 	gostats "github.com/lyft/gostats"
 	logger "github.com/sirupsen/logrus"
 
@@ -9,13 +12,29 @@ import (
 )
 
 func NewStatManager(store gostats.Store, settings settings.Settings) *ManagerImpl {
-	serviceScope := store.ScopeWithTags("ratelimit", settings.ExtraTags).Scope("service")
+	serviceScope := store.ScopeWithTags(GetStatsScope(), settings.ExtraTags).Scope("service")
 	return &ManagerImpl{
 		store:                store,
 		rlStatsScope:         serviceScope.Scope("rate_limit"),
 		serviceStatsScope:    serviceScope,
 		shouldRateLimitScope: serviceScope.Scope("call.should_rate_limit"),
 	}
+}
+
+func GetStatsScope() string {
+	appName := os.Getenv("GOATENV_APP")
+
+	if appName == "" {
+		appName = "ratelimit"
+	}
+
+	appEnv := os.Getenv("GOATENV_ENVIRONMENT")
+
+	if appEnv == "" {
+		appEnv = "local"
+	}
+
+	return fmt.Sprintf("app.%v.%v", appName, appEnv)
 }
 
 func (this *ManagerImpl) GetStatsStore() gostats.Store {
