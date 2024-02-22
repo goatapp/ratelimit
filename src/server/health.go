@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,10 +11,10 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	logger "github.com/sirupsen/logrus"
-
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+
+	logger "github.com/goatapp/ratelimit/src/log"
 )
 
 type HealthChecker struct {
@@ -97,7 +98,8 @@ func (hc *HealthChecker) Fail(componentName string) error {
 		hc.grpc.SetServingStatus(hc.name, healthpb.HealthCheckResponse_NOT_SERVING)
 	} else {
 		errorText := fmt.Sprintf("Invalid component: %s", componentName)
-		logger.Errorf(errorText)
+		logger.Error(context.Background(), errorText)
+
 		return errors.New(errorText)
 	}
 	return nil
@@ -118,8 +120,10 @@ func (hc *HealthChecker) Ok(componentName string) error {
 		}
 	} else {
 		errorText := fmt.Sprintf("Invalid component: %s", componentName)
-		logger.Errorf(errorText)
-		return errors.New(errorText)
+		err := errors.New(errorText)
+		logger.Error(context.Background(), errorText)
+
+		return err
 	}
 
 	return nil

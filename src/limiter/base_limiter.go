@@ -1,15 +1,17 @@
 package limiter
 
 import (
+	"context"
+	"fmt"
 	"math"
 	"math/rand"
 
 	"github.com/coocood/freecache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
-	logger "github.com/sirupsen/logrus"
 
 	"github.com/goatapp/ratelimit/src/assert"
 	"github.com/goatapp/ratelimit/src/config"
+	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/goatapp/ratelimit/src/stats"
 	"github.com/goatapp/ratelimit/src/utils"
 )
@@ -78,7 +80,7 @@ func (this *BaseRateLimiter) IsOverLimitThresholdReached(limitInfo *LimitInfo) b
 
 // Generates response descriptor status based on cache key, over the limit with local cache, over the limit and
 // near the limit thresholds. Thresholds are checked in order and are mutually exclusive.
-func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *LimitInfo,
+func (this *BaseRateLimiter) GetResponseDescriptorStatus(ctx context.Context, key string, limitInfo *LimitInfo,
 	isOverLimitWithLocalCache bool, hitsAddend uint32) *pb.RateLimitResponse_DescriptorStatus {
 	if key == "" {
 		return this.generateResponseDescriptorStatus(pb.RateLimitResponse_OK,
@@ -97,7 +99,7 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 		// The nearLimitThreshold is the number of requests that can be made before hitting the nearLimitRatio.
 		// We need to know it in both the OK and OVER_LIMIT scenarios.
 		limitInfo.nearLimitThreshold = uint32(math.Floor(float64(float32(limitInfo.overLimitThreshold) * this.nearLimitRatio)))
-		logger.Debugf("cache key: %s current: %d", key, limitInfo.limitAfterIncrease)
+		logger.Debug(ctx, fmt.Sprintf("cache key: %s current: %d", key, limitInfo.limitAfterIncrease))
 		if limitInfo.limitAfterIncrease > limitInfo.overLimitThreshold {
 			isOverLimit = true
 			responseDescriptorStatus = this.generateResponseDescriptorStatus(pb.RateLimitResponse_OVER_LIMIT,
@@ -115,14 +117,14 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 				// In the time of 1h1m, since the cache key becomes different (mongo_2h), it won't get ratelimited.
 				err := this.localCache.Set([]byte(key), []byte{}, int(utils.UnitToDivider(limitInfo.limit.Limit.Unit)))
 				if err != nil {
-					logger.Errorf("Failing to set local cache key: %s", key)
+					logger.Error(ctx, fmt.Sprintf("Failing to set local cache key: %s", key), logger.WithError(err))
 				}
 			}
 		} else {
 			responseDescriptorStatus = this.generateResponseDescriptorStatus(pb.RateLimitResponse_OK,
 				limitInfo.limit.Limit, limitInfo.overLimitThreshold-limitInfo.limitAfterIncrease)
 
-			// The limit is OK but we additionally want to know if we are near the limit.
+			// The limit is OK, but we additionally want to know if we are near the limit.
 			this.checkNearLimitThreshold(limitInfo, hitsAddend)
 			limitInfo.limit.Stats.WithinLimit.Add(uint64(hitsAddend))
 		}
@@ -130,7 +132,7 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 
 	// If the limit is in ShadowMode, it should be always return OK
 	if isOverLimit && limitInfo.limit.ShadowMode {
-		logger.Debugf("Limit with key %s, is in shadow_mode", limitInfo.limit.FullKey)
+		logger.Debug(ctx, fmt.Sprintf("Limit with key %s, is in shadow_mode", limitInfo.limit.FullKey))
 		responseDescriptorStatus.Code = pb.RateLimitResponse_OK
 		// Increase shadow mode stats if the limit was actually over the limit
 		this.increaseShadowModeStats(isOverLimitWithLocalCache, limitInfo, hitsAddend)

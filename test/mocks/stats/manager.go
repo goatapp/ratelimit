@@ -1,9 +1,11 @@
 package stats
 
 import (
+	"context"
+	"fmt"
 	gostats "github.com/lyft/gostats"
-	logger "github.com/sirupsen/logrus"
 
+	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/goatapp/ratelimit/src/stats"
 	"github.com/goatapp/ratelimit/src/utils"
 )
@@ -35,7 +37,7 @@ func (m *MockStatManager) NewServiceStats() stats.ServiceStats {
 
 func (m *MockStatManager) NewStats(key string) stats.RateLimitStats {
 	ret := stats.RateLimitStats{}
-	logger.Debugf("outputing test gostats %s", key)
+	logger.Debug(context.Background(), fmt.Sprintf("outputting test gostats %s", key))
 	ret.Key = key
 	key = utils.SanitizeStatName(key)
 	ret.TotalHits = m.store.NewCounter(key + ".total_hits")

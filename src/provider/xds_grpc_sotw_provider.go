@@ -11,7 +11,6 @@ import (
 	"github.com/envoyproxy/go-control-plane/pkg/resource/v3"
 	"github.com/golang/protobuf/ptypes/any"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
-	logger "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -20,6 +19,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/goatapp/ratelimit/src/config"
+	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/goatapp/ratelimit/src/settings"
 	"github.com/goatapp/ratelimit/src/stats"
 
@@ -65,7 +65,7 @@ func (p *XdsGrpcSotwProvider) Stop() {
 }
 
 func (p *XdsGrpcSotwProvider) initXdsClient() {
-	logger.Info("Starting xDS client connection for rate limit configurations")
+	logger.Info(context.Background(), "Starting xDS client connection for rate limit configurations")
 	conn := p.initializeAndWatch()
 
 	for retryEvent := range p.connectionRetryChannel {
@@ -73,7 +73,7 @@ func (p *XdsGrpcSotwProvider) initXdsClient() {
 			conn.Close()
 		}
 		if !retryEvent { // stop watching
-			logger.Info("Stopping xDS client watch for rate limit configurations")
+			logger.Info(context.Background(), "Stopping xDS client watch for rate limit configurations")
 			break
 		}
 		conn = p.initializeAndWatch()
@@ -83,12 +83,12 @@ func (p *XdsGrpcSotwProvider) initXdsClient() {
 func (p *XdsGrpcSotwProvider) initializeAndWatch() *grpc.ClientConn {
 	conn, err := p.getGrpcConnection()
 	if err != nil {
-		logger.Errorf("Error initializing gRPC connection to xDS Management Server: %s", err.Error())
+		logger.Error(context.Background(), "Error initializing gRPC connection to xDS Management Server", logger.WithError(err))
 		p.retryGrpcConn()
 		return nil
 	}
 
-	logger.Info("Connection to xDS Management Server is successful")
+	logger.Info(context.Background(), "Connection to xDS Management Server is successful")
 	p.adsClient.InitConnect(conn)
 	go p.watchConfigs()
 	return conn
@@ -98,14 +98,14 @@ func (p *XdsGrpcSotwProvider) watchConfigs() {
 	for {
 		resp, err := p.adsClient.Fetch()
 		if err != nil {
-			logger.Errorf("Failed to receive configuration from xDS Management Server: %s", err.Error())
+			logger.Error(context.Background(), "Failed to receive configuration from xDS Management Server", logger.WithError(err))
 			if sotw.IsConnError(err) {
 				p.retryGrpcConn()
 				return
 			}
 			p.adsClient.Nack(err.Error())
 		} else {
-			logger.Tracef("Response received from xDS Management Server: %v", resp)
+			logger.Debug(context.Background(), fmt.Sprintf("Response received from xDS Management Server: %v", resp))
 			p.sendConfigs(resp.Resources)
 		}
 	}
@@ -113,7 +113,7 @@ func (p *XdsGrpcSotwProvider) watchConfigs() {
 
 func (p *XdsGrpcSotwProvider) getGrpcConnection() (*grpc.ClientConn, error) {
 	backOff := grpc_retry.BackoffLinearWithJitter(p.settings.ConfigGrpcXdsServerConnectRetryInterval, 0.5)
-	logger.Infof("Dialing xDS Management Server: '%s'", p.settings.ConfigGrpcXdsServerUrl)
+	logger.Info(context.Background(), fmt.Sprintf("Dialing xDS Management Server: '%s'", p.settings.ConfigGrpcXdsServerUrl))
 	return grpc.Dial(
 		p.settings.ConfigGrpcXdsServerUrl,
 		p.getGrpcTransportCredentials(),
@@ -130,7 +130,7 @@ func (p *XdsGrpcSotwProvider) getGrpcTransportCredentials() grpc.DialOption {
 
 	configGrpcXdsTlsConfig := p.settings.ConfigGrpcXdsTlsConfig
 	if p.settings.ConfigGrpcXdsServerTlsSAN != "" {
-		logger.Infof("ServerName used for xDS Management Service hostname verification is %s", p.settings.ConfigGrpcXdsServerTlsSAN)
+		logger.Info(context.Background(), fmt.Sprintf("ServerName used for xDS Management Service hostname verification is %s", p.settings.ConfigGrpcXdsServerTlsSAN))
 		configGrpcXdsTlsConfig.ServerName = p.settings.ConfigGrpcXdsServerTlsSAN
 	}
 	return grpc.WithTransportCredentials(credentials.NewTLS(configGrpcXdsTlsConfig))
@@ -149,7 +149,7 @@ func (p *XdsGrpcSotwProvider) sendConfigs(resources []*any.Any) {
 		confPb := &rls_conf_v3.RateLimitConfig{}
 		err := anypb.UnmarshalTo(res, confPb, proto.UnmarshalOptions{})
 		if err != nil {
-			logger.Errorf("Error while unmarshalling config from xDS Management Server: %s", err.Error())
+			logger.Error(context.Background(), "Error while unmarshalling config from xDS Management Server", logger.WithError(err))
 			p.adsClient.Nack(err.Error())
 			return
 		}

@@ -2,10 +2,10 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,9 +19,8 @@ import (
 
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 
-	logger "github.com/sirupsen/logrus"
-
 	"github.com/goatapp/ratelimit/src/limiter"
+	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/goatapp/ratelimit/src/memcached"
 	"github.com/goatapp/ratelimit/src/redis"
 	"github.com/goatapp/ratelimit/src/server"
@@ -72,7 +71,7 @@ func createLimiter(ctx context.Context, srv server.Server, s settings.Settings, 
 			srv.Scope(),
 			statsManager)
 	default:
-		logger.Fatalf("Invalid setting for BackendType: %s", s.BackendType)
+		logger.Fatal(ctx, fmt.Sprintf("Invalid setting for BackendType: %s", s.BackendType))
 		panic("This line should not be reachable")
 	}
 }
@@ -83,27 +82,11 @@ func (runner *Runner) Run() {
 		tp := trace.InitProductionTraceProvider(s.TracingExporterProtocol, s.TracingServiceName, s.TracingServiceNamespace, s.TracingServiceInstanceId, s.TracingSamplingRate)
 		defer func() {
 			if err := tp.Shutdown(context.Background()); err != nil {
-				logger.Printf("Error shutting down tracer provider: %v", err)
+				logger.Error(context.Background(), "Error shutting down tracer provider", logger.WithError(err))
 			}
 		}()
 	} else {
-		logger.Infof("Tracing disabled")
-	}
-
-	logLevel, err := logger.ParseLevel(s.LogLevel)
-	if err != nil {
-		logger.Fatalf("Could not parse log level. %v\n", err)
-	} else {
-		logger.SetLevel(logLevel)
-	}
-	if strings.ToLower(s.LogFormat) == "json" {
-		logger.SetFormatter(&logger.JSONFormatter{
-			TimestampFormat: time.RFC3339Nano,
-			FieldMap: logger.FieldMap{
-				logger.FieldKeyTime: "timestamp",
-				logger.FieldKeyMsg:  "message",
-			},
-		})
+		logger.Info(context.Background(), "Tracing disabled")
 	}
 
 	var localCache *freecache.Cache

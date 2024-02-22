@@ -42,9 +42,6 @@ type Settings struct {
 	GrpcClientTlsCACert string `envconfig:"GRPC_CLIENT_TLS_CACERT" default:""`
 	// GrpcClientTlsSAN is the SAN to validate from the client cert during mTLS auth
 	GrpcClientTlsSAN string `envconfig:"GRPC_CLIENT_TLS_SAN" default:""`
-	// Logging settings
-	LogLevel  string `envconfig:"LOG_LEVEL" default:"WARN"`
-	LogFormat string `envconfig:"LOG_FORMAT" default:"text"`
 
 	// Rate limit configuration
 	// ConfigType is the method of configuring rate limits. Possible values "FILE", "GRPC_XDS_SOTW".

@@ -15,11 +15,11 @@ import (
 	"github.com/coocood/freecache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 	"github.com/mediocregopher/radix/v4"
-	logger "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 
 	"github.com/goatapp/ratelimit/src/config"
 	"github.com/goatapp/ratelimit/src/limiter"
+	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/goatapp/ratelimit/src/utils"
 )
 
@@ -79,7 +79,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 	request *pb.RateLimitRequest,
 	limits []*config.RateLimit) []*pb.RateLimitResponse_DescriptorStatus {
 
-	logger.Debugf("starting cache lookup")
+	logger.Debug(ctx, "starting cache lookup")
 
 	// request.HitsAddend could be 0 (default value) if not specified by the caller in the RateLimit request.
 	hitsAddend := utils.Max(1, request.HitsAddend)
@@ -110,9 +110,9 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 			// Check if key is over the limit in local cache.
 			if this.baseRateLimiter.IsOverLimitWithLocalCache(cacheKey.Key) {
 				if limits[i].ShadowMode {
-					logger.Debugf("Cache key %s would be rate limited but shadow mode is enabled on this rule", cacheKey.Key)
+					logger.Debug(ctx, fmt.Sprintf("Cache key %s would be rate limited but shadow mode is enabled on this rule", cacheKey.Key))
 				} else {
-					logger.Debugf("cache key is over the limit: %s", cacheKey.Key)
+					logger.Debug(ctx, fmt.Sprintf("cache key is over the limit: %s", cacheKey.Key))
 				}
 				isOverLimitWithLocalCache[i] = true
 				hitsAddendForRedis = 0
@@ -169,9 +169,9 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 			// Check if key is over the limit in local cache.
 			if this.baseRateLimiter.IsOverLimitWithLocalCache(cacheKey.Key) {
 				if limits[i].ShadowMode {
-					logger.Debugf("Cache key %s would be rate limited but shadow mode is enabled on this rule", cacheKey.Key)
+					logger.Debug(ctx, fmt.Sprintf("Cache key %s would be rate limited but shadow mode is enabled on this rule", cacheKey.Key))
 				} else {
-					logger.Debugf("cache key is over the limit: %s", cacheKey.Key)
+					logger.Debug(ctx, fmt.Sprintf("cache key is over the limit: %s", cacheKey.Key))
 				}
 				isOverLimitWithLocalCache[i] = true
 				overlimitIndexes[i] = true
@@ -186,7 +186,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 			continue
 		}
 
-		logger.Debugf("looking up cache key: %s", cacheKey.Key)
+		logger.Debug(ctx, fmt.Sprintf("looking up cache key: %s", cacheKey.Key))
 
 		expirationSeconds := utils.UnitToDivider(limits[i].Limit.Unit)
 		if this.baseRateLimiter.ExpirationJitterMaxSeconds > 0 {
@@ -243,7 +243,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 
 		limitInfo := limiter.NewRateLimitInfo(limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0)
 
-		responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(cacheKey.Key,
+		responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(ctx, cacheKey.Key,
 			limitInfo, isOverLimitWithLocalCache[i], hitsAddend)
 
 	}

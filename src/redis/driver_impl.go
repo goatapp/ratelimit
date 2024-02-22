@@ -9,14 +9,14 @@ import (
 	stats "github.com/lyft/gostats"
 	"github.com/mediocregopher/radix/v4"
 	"github.com/mediocregopher/radix/v4/trace"
-	logger "github.com/sirupsen/logrus"
 
+	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/goatapp/ratelimit/src/server"
 	"github.com/goatapp/ratelimit/src/utils"
 )
 
 type commonClient interface {
-	// Do performs an Action on a Conn from a primary instance.
+	// Do perform an Action on a Conn from a primary instance.
 	Do(context.Context, radix.Action) error
 	// Once Close() is called all future method calls on the Client will return
 	// an error
@@ -46,7 +46,7 @@ func poolTrace(ps *poolStats, healthCheckActiveConnection bool, srv server.Serve
 				if healthCheckActiveConnection && srv != nil {
 					err := srv.HealthChecker().Ok(server.RedisHealthComponentName)
 					if err != nil {
-						logger.Errorf("Unable to update health status: %s", err)
+						logger.Error(context.Background(), "Unable to update health status", logger.WithError(err))
 					}
 				}
 			} else {
@@ -59,7 +59,7 @@ func poolTrace(ps *poolStats, healthCheckActiveConnection bool, srv server.Serve
 			if healthCheckActiveConnection && srv != nil && ps.connectionActive.Value() == 0 {
 				err := srv.HealthChecker().Fail(server.RedisHealthComponentName)
 				if err != nil {
-					logger.Errorf("Unable to update health status: %s", err)
+					logger.Error(context.Background(), "Unable to update health status", logger.WithError(err))
 				}
 			}
 		},
@@ -81,19 +81,19 @@ func checkError(err error) {
 func NewClientImpl(ctx context.Context, scope stats.Scope, useTls bool, auth, redisSocketType, redisType, url string, poolSize int,
 	implicitPipelining bool, tlsConfig *tls.Config, healthCheckActiveConnection bool, srv server.Server) Client {
 	maskedUrl := utils.MaskCredentialsInUrl(url)
-	logger.Warnf("connecting to redis on %s with pool size %d", maskedUrl, poolSize)
+	logger.Warn(ctx, fmt.Sprintf("connecting to redis on %s with pool size %d", maskedUrl, poolSize))
 
 	stats := newPoolStats(scope)
 
-	logger.Debugf("Implicit pipelining enabled: %v", implicitPipelining)
+	logger.Debug(ctx, fmt.Sprintf("Implicit pipelining enabled: %v", implicitPipelining))
 
 	poolConfig := radix.PoolConfig{Size: poolSize, Trace: poolTrace(&stats, healthCheckActiveConnection, srv)}
 	if auth != "" {
 		user, pass, found := strings.Cut(auth, ":")
 		if found {
-			logger.Warnf("enabling authentication to redis on %s with user %s", maskedUrl, user)
+			logger.Warn(ctx, fmt.Sprintf("enabling authentication to redis on %s with user %s", maskedUrl, user))
 		} else {
-			logger.Warnf("enabling authentication to redis on %s without user", maskedUrl)
+			logger.Warn(ctx, fmt.Sprintf("enabling authentication to redis on %s without user", maskedUrl))
 			pass = user
 			user = ""
 		}
@@ -115,7 +115,7 @@ func NewClientImpl(ctx context.Context, scope stats.Scope, useTls bool, auth, re
 		if !implicitPipelining {
 			panic(RedisError("Implicit Pipelining must be enabled to work with Redis Cluster Mode. Set values for REDIS_PIPELINE_WINDOW or REDIS_PIPELINE_LIMIT to enable implicit pipelining"))
 		}
-		logger.Warnf("Creating cluster with urls %v", urls)
+		logger.Warn(ctx, fmt.Sprintf("Creating cluster with urls %v", urls))
 		client, err = radix.ClusterConfig{PoolConfig: poolConfig}.New(ctx, urls)
 	case "sentinel":
 		urls := strings.Split(url, ",")

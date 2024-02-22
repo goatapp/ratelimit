@@ -28,12 +28,12 @@ import (
 	reuseport "github.com/kavu/go_reuseport"
 	"github.com/lyft/goruntime/loader"
 	gostats "github.com/lyft/gostats"
-	logger "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/goatapp/ratelimit/src/limiter"
+	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/goatapp/ratelimit/src/settings"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -85,20 +85,20 @@ func NewJsonHandler(svc pb.RateLimitServiceServer) func(http.ResponseWriter, *ht
 
 		body, err := io.ReadAll(request.Body)
 		if err != nil {
-			logger.Warnf("error: %s", err.Error())
+			logger.Error(ctx, "", logger.WithError(err))
 			writeHttpStatus(writer, http.StatusBadRequest)
 			return
 		}
 
 		if err := protojson.Unmarshal(body, &req); err != nil {
-			logger.Warnf("error: %s", err.Error())
+			logger.Error(ctx, "", logger.WithError(err))
 			writeHttpStatus(writer, http.StatusBadRequest)
 			return
 		}
 
 		resp, err := svc.ShouldRateLimit(ctx, &req)
 		if err != nil {
-			logger.Warnf("error: %s", err.Error())
+			logger.Error(ctx, "", logger.WithError(err))
 			writeHttpStatus(writer, http.StatusBadRequest)
 			return
 		}
@@ -111,16 +111,16 @@ func NewJsonHandler(svc pb.RateLimitServiceServer) func(http.ResponseWriter, *ht
 		)
 		defer span.End()
 
-		logger.Debugf("resp:%s", resp)
+		logger.Debug(ctx, fmt.Sprintf("resp:%s", resp))
 		if resp == nil {
-			logger.Error("nil response")
+			logger.Error(ctx, "nil response")
 			writeHttpStatus(writer, http.StatusInternalServerError)
 			return
 		}
 
 		jsonResp, err := protojson.Marshal(resp)
 		if err != nil {
-			logger.Errorf("error marshaling proto3 to json: %s", err.Error())
+			logger.Error(ctx, "error marshaling proto3 to json", logger.WithError(err))
 			writeHttpStatus(writer, http.StatusInternalServerError)
 			return
 		}
@@ -146,7 +146,7 @@ func getProviderImpl(s settings.Settings, statsManager stats.Manager, rootStore 
 	case "GRPC_XDS_SOTW":
 		return provider.NewXdsGrpcSotwProvider(s, statsManager)
 	default:
-		logger.Fatalf("Invalid setting for ConfigType: %s", s.ConfigType)
+		logger.Fatal(context.Background(), fmt.Sprintf("Invalid setting for ConfigType: %s", s.ConfigType))
 		panic("This line should not be reachable")
 	}
 }
@@ -166,10 +166,10 @@ func (server *server) Start() {
 }
 
 func (server *server) startGrpc() {
-	logger.Warnf("Listening for gRPC on '%s'", server.grpcAddress)
+	logger.Warn(context.Background(), fmt.Sprintf("Listening for gRPC on '%s'", server.grpcAddress))
 	lis, err := reuseport.Listen("tcp", server.grpcAddress)
 	if err != nil {
-		logger.Fatalf("Failed to listen for gRPC: %v", err)
+		logger.Fatal(context.Background(), fmt.Sprintf("Failed to listen for gRPC: %v", err))
 	}
 	server.grpcServer.Serve(lis)
 }
@@ -313,7 +313,7 @@ func (server *server) handleGracefulShutdown() {
 	go func() {
 		sig := <-sigs
 
-		logger.Infof("Ratelimit server received %v, shutting down gracefully", sig)
+		logger.Info(context.Background(), fmt.Sprintf("Ratelimit server received %v, shutting down gracefully", sig))
 		server.Stop()
 		os.Exit(0)
 	}()
