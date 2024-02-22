@@ -2,10 +2,10 @@ package trace
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/google/uuid"
-	logger "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -15,6 +15,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
+
+	logger "github.com/goatapp/ratelimit/src/log"
 )
 
 var (
@@ -26,14 +28,14 @@ func InitProductionTraceProvider(protocol string, serviceName string, serviceNam
 	client := createClient(protocol)
 	exporter, err := otlptrace.New(context.Background(), client)
 	if err != nil {
-		logger.Fatalf("creating OTLP trace exporter: %v", err)
+		logger.Fatal(context.Background(), fmt.Sprintf("creating OTLP trace exporter: %v", err))
 	}
 
 	var useServiceInstanceId string
 	if serviceInstanceId == "" {
 		intUuid, err := uuid.NewRandom()
 		if err != nil {
-			logger.Fatalf("generating random uuid for trace exporter: %v", err)
+			logger.Fatal(context.Background(), fmt.Sprintf("generating random uuid for trace exporter: %v", err))
 		}
 		useServiceInstanceId = intUuid.String()
 	} else {
@@ -48,7 +50,7 @@ func InitProductionTraceProvider(protocol string, serviceName string, serviceNam
 	)
 
 	if err != nil {
-		logger.Fatal(err)
+		logger.Fatal(context.Background(), "", logger.WithError(err))
 	}
 	// trace if parent contains root span and is sampled
 	// otherwise only trace according to sampling rate
@@ -63,8 +65,8 @@ func InitProductionTraceProvider(protocol string, serviceName string, serviceNam
 	)
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
-	logger.Infof("TracerProvider initialized with following parameters: protocol: %s, serviceName: %s, serviceNamespace: %s, serviceInstanceId: %s, samplingRate: %f",
-		protocol, serviceName, serviceNamespace, useServiceInstanceId, samplingRate)
+	logger.Info(context.Background(), fmt.Sprintf("TracerProvider initialized with following parameters: protocol: %s, serviceName: %s, serviceNamespace: %s, serviceInstanceId: %s, samplingRate: %f",
+		protocol, serviceName, serviceNamespace, useServiceInstanceId, samplingRate))
 	return tp
 }
 
@@ -76,7 +78,7 @@ func createClient(protocol string) (client otlptrace.Client) {
 	case "grpc":
 		client = otlptracegrpc.NewClient()
 	default:
-		logger.Fatalf("Invalid otlptrace client protocol: %s", protocol)
+		logger.Fatal(context.Background(), fmt.Sprintf("Invalid otlptrace client protocol: %s", protocol))
 		panic("Invalid otlptrace client protocol")
 	}
 	return

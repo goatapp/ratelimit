@@ -1,10 +1,12 @@
 package server
 
 import (
+	"context"
 	"crypto/x509"
 	"errors"
+	"fmt"
 
-	logger "github.com/sirupsen/logrus"
+	logger "github.com/goatapp/ratelimit/src/log"
 )
 
 func verifyClient(clientCAPool *x509.CertPool, clientSAN string) func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
@@ -25,7 +27,7 @@ func verifyClient(clientCAPool *x509.CertPool, clientSAN string) func(rawCerts [
 			}
 			_, err := certs[0].Verify(opts)
 			if err != nil {
-				logger.Warnf("error validating client: %s", err.Error())
+				logger.Warn(context.Background(), fmt.Sprintf("error validating client: %s", err.Error()))
 				return err
 			}
 		}

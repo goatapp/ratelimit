@@ -45,7 +45,8 @@ services:
       - USE_STATSD=true
       - STATSD_HOST=statsd
       - STATSD_PORT=9125
-      - LOG_LEVEL=debug
+      - LOG_FORMAT=console
+      - LOG_LEVEL=DEBUG
       - REDIS_SOCKET_TYPE=tcp
       - REDIS_URL=redis:6379
       - RUNTIME_ROOT=/data

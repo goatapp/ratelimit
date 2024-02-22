@@ -1,12 +1,13 @@
 package stats
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	gostats "github.com/lyft/gostats"
-	logger "github.com/sirupsen/logrus"
 
+	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/goatapp/ratelimit/src/settings"
 	"github.com/goatapp/ratelimit/src/utils"
 )
@@ -46,7 +47,7 @@ func (this *ManagerImpl) GetStatsStore() gostats.Store {
 // @return new stats.
 func (this *ManagerImpl) NewStats(key string) RateLimitStats {
 	ret := RateLimitStats{}
-	logger.Debugf("Creating stats for key: '%s'", key)
+	logger.Debug(context.Background(), fmt.Sprintf("Creating stats for key: '%s'", key))
 	ret.Key = key
 	key = utils.SanitizeStatName(key)
 	ret.TotalHits = this.rlStatsScope.NewCounter(key + ".total_hits")
