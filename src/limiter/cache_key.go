@@ -2,14 +2,12 @@ package limiter
 
 import (
 	"bytes"
-	"strconv"
 	"sync"
 
 	pb_struct "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 
 	"github.com/goatapp/ratelimit/src/config"
-	"github.com/goatapp/ratelimit/src/utils"
 )
 
 type CacheKeyGenerator struct {
@@ -43,10 +41,9 @@ func isPerSecondLimit(unit pb.RateLimitResponse_RateLimit_Unit) bool {
 // @param domain supplies the cache key domain.
 // @param descriptor supplies the descriptor to generate the key for.
 // @param limit supplies the rate limit to generate the key for (may be nil).
-// @param now supplies the current unix time.
 // @return CacheKey struct.
 func (this *CacheKeyGenerator) GenerateCacheKey(
-	domain string, descriptor *pb_struct.RateLimitDescriptor, limit *config.RateLimit, now int64) CacheKey {
+	domain string, descriptor *pb_struct.RateLimitDescriptor, limit *config.RateLimit) CacheKey {
 
 	if limit == nil {
 		return CacheKey{
@@ -63,15 +60,15 @@ func (this *CacheKeyGenerator) GenerateCacheKey(
 	b.WriteString(domain)
 	b.WriteByte('_')
 
-	for _, entry := range descriptor.Entries {
+	for i, entry := range descriptor.Entries {
+		if i > 0 {
+			b.WriteByte('_')
+		}
+
 		b.WriteString(entry.Key)
 		b.WriteByte('_')
 		b.WriteString(entry.Value)
-		b.WriteByte('_')
 	}
-
-	divider := utils.UnitToDivider(limit.Limit.Unit)
-	b.WriteString(strconv.FormatInt((now/divider)*divider, 10))
 
 	return CacheKey{
 		Key:       b.String(),

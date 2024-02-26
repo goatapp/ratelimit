@@ -48,11 +48,11 @@ func (this *BaseRateLimiter) GenerateCacheKeys(request *pb.RateLimitRequest,
 	limits []*config.RateLimit, hitsAddend uint32) []CacheKey {
 	assert.Assert(len(request.Descriptors) == len(limits))
 	cacheKeys := make([]CacheKey, len(request.Descriptors))
-	now := this.TimeSource.UnixNow()
+
 	for i := 0; i < len(request.Descriptors); i++ {
 		// generateCacheKey() returns an empty string in the key if there is no limit
 		// so that we can keep the arrays all the same size.
-		cacheKeys[i] = this.cacheKeyGenerator.GenerateCacheKey(request.Domain, request.Descriptors[i], limits[i], now)
+		cacheKeys[i] = this.cacheKeyGenerator.GenerateCacheKey(request.Domain, request.Descriptors[i], limits[i])
 		// Increase statistics for limits hit by their respective requests.
 		if limits[i] != nil {
 			limits[i].Stats.TotalHits.Add(uint64(hitsAddend))
