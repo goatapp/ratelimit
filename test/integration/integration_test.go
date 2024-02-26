@@ -510,7 +510,7 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 			},
 		}
 
-		assert.Condition(func() {
+		assert.Condition(func() bool {
 			if proto.Equal(expectedResponse_48, response) || proto.Equal(expectedResponse_49, response) {
 				return true
 			}
