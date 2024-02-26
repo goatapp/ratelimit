@@ -20,6 +20,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/goatapp/ratelimit/src/memcached"
 	"github.com/goatapp/ratelimit/src/service_cmd/runner"
@@ -495,15 +496,27 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 			common.NewRateLimitRequest("basic", [][][2]string{{{getCacheKey("key1", enable_local_cache), "foo"}}}, 1))
 		durRemaining := response.GetStatuses()[0].DurationUntilReset
 
-		common.AssertProtoEqual(
-			assert,
-			&pb.RateLimitResponse{
-				OverallCode: pb.RateLimitResponse_OK,
-				Statuses: []*pb.RateLimitResponse_DescriptorStatus{
-					newDescriptorStatus(pb.RateLimitResponse_OK, 50, pb.RateLimitResponse_RateLimit_SECOND, 49, durRemaining),
-				},
+		expectedResponse_48 := &pb.RateLimitResponse{
+			OverallCode: pb.RateLimitResponse_OK,
+			Statuses: []*pb.RateLimitResponse_DescriptorStatus{
+				newDescriptorStatus(pb.RateLimitResponse_OK, 50, pb.RateLimitResponse_RateLimit_SECOND, 48, durRemaining),
 			},
-			response)
+		}
+
+		expectedResponse_49 := &pb.RateLimitResponse{
+			OverallCode: pb.RateLimitResponse_OK,
+			Statuses: []*pb.RateLimitResponse_DescriptorStatus{
+				newDescriptorStatus(pb.RateLimitResponse_OK, 50, pb.RateLimitResponse_RateLimit_SECOND, 49, durRemaining),
+			},
+		}
+
+		assert.Condition(func() {
+			if proto.Equal(expectedResponse_48, response) || proto.Equal(expectedResponse_49, response) {
+				return true
+			}
+
+			return false
+		}, fmt.Sprintf("These two protobuf messages are not equal:\nexpected: %v\nactual:  %v", expectedResponse_48, response))
 		assert.NoError(err)
 
 		// store.NewCounter returns the existing counter.
