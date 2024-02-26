@@ -130,12 +130,15 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(ctx context.Context, ke
 		}
 	}
 
-	// If the limit is in ShadowMode, it should be always return OK
-	if isOverLimit && limitInfo.limit.ShadowMode {
-		logger.Debug(ctx, fmt.Sprintf("Limit with key %s, is in shadow_mode", limitInfo.limit.FullKey))
-		responseDescriptorStatus.Code = pb.RateLimitResponse_OK
-		// Increase shadow mode stats if the limit was actually over the limit
-		this.increaseShadowModeStats(isOverLimitWithLocalCache, limitInfo, hitsAddend)
+	if isOverLimit {
+		if limitInfo.limit.ShadowMode {
+			logger.Debug(ctx, fmt.Sprintf("Limit with key %s, is in shadow_mode", limitInfo.limit.FullKey))
+			responseDescriptorStatus.Code = pb.RateLimitResponse_OK
+			// Increase shadow mode stats if the limit was actually over the limit
+			this.increaseShadowModeStats(isOverLimitWithLocalCache, limitInfo, hitsAddend)
+		} else {
+			logger.Debug(ctx, fmt.Sprintf("Limit with key %s, is over_limit", limitInfo.limit.FullKey))
+		}
 	}
 
 	return responseDescriptorStatus
