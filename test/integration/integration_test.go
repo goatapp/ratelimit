@@ -516,7 +516,7 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 			}
 
 			return false
-		}, fmt.Sprintf("These two protobuf messages are not equal:\nexpected: %v\nactual:  %v", expectedResponse_48, response))
+		}, fmt.Sprintf("These protobuf messages are not equal:\nexpected_1: %v\n or expected_2: %v\n actual:  %v", expectedResponse_48, expectedResponse_49, response))
 		assert.NoError(err)
 
 		// store.NewCounter returns the existing counter.
