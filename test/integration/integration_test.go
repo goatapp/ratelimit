@@ -500,7 +500,7 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 			&pb.RateLimitResponse{
 				OverallCode: pb.RateLimitResponse_OK,
 				Statuses: []*pb.RateLimitResponse_DescriptorStatus{
-					newDescriptorStatus(pb.RateLimitResponse_OK, 50, pb.RateLimitResponse_RateLimit_SECOND, 48, durRemaining),
+					newDescriptorStatus(pb.RateLimitResponse_OK, 50, pb.RateLimitResponse_RateLimit_SECOND, 49, durRemaining),
 				},
 			},
 			response)
