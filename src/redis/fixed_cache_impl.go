@@ -23,7 +23,13 @@ import (
 	"github.com/goatapp/ratelimit/src/utils"
 )
 
-var script = `local expires_at = tonumber(redis.call("get", ARGV[2]))
+var script = `
+-- ARGV[1] = entry key
+-- ARGV[2] = expiration entry key
+-- ARGV[3] = expiration time
+-- ARGV[4] = current time
+-- ARGV[5] = increment count
+local expires_at = tonumber(redis.call("get", ARGV[2]))
 
 if not expires_at or expires_at < tonumber(ARGV[4]) then
 	-- this is either a brand new window,
