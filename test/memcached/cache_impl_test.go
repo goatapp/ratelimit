@@ -46,11 +46,11 @@ func TestMemcached(t *testing.T) {
 	sm := mockstats.NewMockStatManager(statsStore)
 	cache := memcached.NewRateLimitCacheImpl(client, timeSource, nil, 0, nil, sm, 0.8, "")
 
-	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key_value_1234"}).Return(
-		getMultiResult(map[string]int{"domain_key_value_1234": 4}), nil,
+	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(2)
+	client.EXPECT().GetMulti([]string{"domain_key_value"}).Return(
+		getMultiResult(map[string]int{"domain_key_value": 4}), nil,
 	)
-	client.EXPECT().Increment("domain_key_value_1234", uint64(1)).Return(uint64(5), nil)
+	client.EXPECT().Increment("domain_key_value", uint64(1)).Return(uint64(5), nil)
 
 	request := common.NewRateLimitRequest("domain", [][][2]string{{{"key", "value"}}}, 1)
 	limits := []*config.RateLimit{config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key_value"), false, false, "", nil, false)}
@@ -63,11 +63,11 @@ func TestMemcached(t *testing.T) {
 	assert.Equal(uint64(0), limits[0].Stats.NearLimit.Value())
 	assert.Equal(uint64(1), limits[0].Stats.WithinLimit.Value())
 
-	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key2_value2_subkey2_subvalue2_1200"}).Return(
-		getMultiResult(map[string]int{"domain_key2_value2_subkey2_subvalue2_1200": 10}), nil,
+	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(2)
+	client.EXPECT().GetMulti([]string{"domain_key2_value2_subkey2_subvalue2"}).Return(
+		getMultiResult(map[string]int{"domain_key2_value2_subkey2_subvalue2": 10}), nil,
 	)
-	client.EXPECT().Increment("domain_key2_value2_subkey2_subvalue2_1200", uint64(1)).Return(uint64(11), nil)
+	client.EXPECT().Increment("domain_key2_value2_subkey2_subvalue2", uint64(1)).Return(uint64(11), nil)
 
 	request = common.NewRateLimitRequest(
 		"domain",
@@ -90,19 +90,19 @@ func TestMemcached(t *testing.T) {
 	assert.Equal(uint64(0), limits[1].Stats.NearLimit.Value())
 	assert.Equal(uint64(0), limits[1].Stats.WithinLimit.Value())
 
-	timeSource.EXPECT().UnixNow().Return(int64(1000000)).MaxTimes(5)
+	timeSource.EXPECT().UnixNow().Return(int64(1000000)).MaxTimes(4)
 	client.EXPECT().GetMulti([]string{
-		"domain_key3_value3_997200",
-		"domain_key3_value3_subkey3_subvalue3_950400",
+		"domain_key3_value3",
+		"domain_key3_value3_subkey3_subvalue3",
 	}).Return(
 		getMultiResult(map[string]int{
-			"domain_key3_value3_997200":                   10,
-			"domain_key3_value3_subkey3_subvalue3_950400": 12,
+			"domain_key3_value3":                   10,
+			"domain_key3_value3_subkey3_subvalue3": 12,
 		}),
 		nil,
 	)
-	client.EXPECT().Increment("domain_key3_value3_997200", uint64(1)).Return(uint64(11), nil)
-	client.EXPECT().Increment("domain_key3_value3_subkey3_subvalue3_950400", uint64(1)).Return(uint64(13), nil)
+	client.EXPECT().Increment("domain_key3_value3", uint64(1)).Return(uint64(11), nil)
+	client.EXPECT().Increment("domain_key3_value3_subkey3_subvalue3", uint64(1)).Return(uint64(13), nil)
 
 	request = common.NewRateLimitRequest(
 		"domain",
@@ -144,10 +144,10 @@ func TestMemcachedGetError(t *testing.T) {
 	cache := memcached.NewRateLimitCacheImpl(client, timeSource, nil, 0, nil, sm, 0.8, "")
 
 	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key_value_1234"}).Return(
+	client.EXPECT().GetMulti([]string{"domain_key_value"}).Return(
 		nil, memcache.ErrNoServers,
 	)
-	client.EXPECT().Increment("domain_key_value_1234", uint64(1)).Return(uint64(5), nil)
+	client.EXPECT().Increment("domain_key_value", uint64(1)).Return(uint64(5), nil)
 
 	request := common.NewRateLimitRequest("domain", [][][2]string{{{"key", "value"}}}, 1)
 	limits := []*config.RateLimit{config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key_value"), false, false, "", nil, false)}
@@ -162,10 +162,10 @@ func TestMemcachedGetError(t *testing.T) {
 
 	// No error, but the key is missing
 	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key_value1_1234"}).Return(
+	client.EXPECT().GetMulti([]string{"domain_key_value1"}).Return(
 		nil, nil,
 	)
-	client.EXPECT().Increment("domain_key_value1_1234", uint64(1)).Return(uint64(5), nil)
+	client.EXPECT().Increment("domain_key_value1", uint64(1)).Return(uint64(5), nil)
 
 	request = common.NewRateLimitRequest("domain", [][][2]string{{{"key", "value1"}}}, 1)
 	limits = []*config.RateLimit{config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key_value1"), false, false, "", nil, false)}
@@ -233,10 +233,10 @@ func TestOverLimitWithLocalCache(t *testing.T) {
 
 	// Test Near Limit Stats. Under Near Limit Ratio
 	timeSource.EXPECT().UnixNow().Return(int64(1000000)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key4_value4_997200"}).Return(
-		getMultiResult(map[string]int{"domain_key4_value4_997200": 10}), nil,
+	client.EXPECT().GetMulti([]string{"domain_key4_value4"}).Return(
+		getMultiResult(map[string]int{"domain_key4_value4": 10}), nil,
 	)
-	client.EXPECT().Increment("domain_key4_value4_997200", uint64(1)).Return(uint64(5), nil)
+	client.EXPECT().Increment("domain_key4_value4", uint64(1)).Return(uint64(5), nil)
 
 	request := common.NewRateLimitRequest("domain", [][][2]string{{{"key4", "value4"}}}, 1)
 
@@ -260,10 +260,10 @@ func TestOverLimitWithLocalCache(t *testing.T) {
 
 	// Test Near Limit Stats. At Near Limit Ratio, still OK
 	timeSource.EXPECT().UnixNow().Return(int64(1000000)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key4_value4_997200"}).Return(
-		getMultiResult(map[string]int{"domain_key4_value4_997200": 12}), nil,
+	client.EXPECT().GetMulti([]string{"domain_key4_value4"}).Return(
+		getMultiResult(map[string]int{"domain_key4_value4": 12}), nil,
 	)
-	client.EXPECT().Increment("domain_key4_value4_997200", uint64(1)).Return(uint64(13), nil)
+	client.EXPECT().Increment("domain_key4_value4", uint64(1)).Return(uint64(13), nil)
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{
@@ -281,10 +281,10 @@ func TestOverLimitWithLocalCache(t *testing.T) {
 
 	// Test Over limit stats
 	timeSource.EXPECT().UnixNow().Return(int64(1000000)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key4_value4_997200"}).Return(
-		getMultiResult(map[string]int{"domain_key4_value4_997200": 15}), nil,
+	client.EXPECT().GetMulti([]string{"domain_key4_value4"}).Return(
+		getMultiResult(map[string]int{"domain_key4_value4": 15}), nil,
 	)
-	client.EXPECT().Increment("domain_key4_value4_997200", uint64(1)).Return(uint64(16), nil)
+	client.EXPECT().Increment("domain_key4_value4", uint64(1)).Return(uint64(16), nil)
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{
@@ -302,8 +302,8 @@ func TestOverLimitWithLocalCache(t *testing.T) {
 
 	// Test Over limit stats with local cache
 	timeSource.EXPECT().UnixNow().Return(int64(1000000)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key4_value4_997200"}).Times(0)
-	client.EXPECT().Increment("domain_key4_value4_997200", uint64(1)).Times(0)
+	client.EXPECT().GetMulti([]string{"domain_key4_value4"}).Times(0)
+	client.EXPECT().Increment("domain_key4_value4", uint64(1)).Times(0)
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{
 			{Code: pb.RateLimitResponse_OVER_LIMIT, CurrentLimit: limits[0].Limit, LimitRemaining: 0, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)},
@@ -333,11 +333,11 @@ func TestNearLimit(t *testing.T) {
 	cache := memcached.NewRateLimitCacheImpl(client, timeSource, nil, 0, nil, sm, 0.8, "")
 
 	// Test Near Limit Stats. Under Near Limit Ratio
-	timeSource.EXPECT().UnixNow().Return(int64(1000000)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key4_value4_997200"}).Return(
-		getMultiResult(map[string]int{"domain_key4_value4_997200": 10}), nil,
+	timeSource.EXPECT().UnixNow().Return(int64(1000000)).MaxTimes(2)
+	client.EXPECT().GetMulti([]string{"domain_key4_value4"}).Return(
+		getMultiResult(map[string]int{"domain_key4_value4": 10}), nil,
 	)
-	client.EXPECT().Increment("domain_key4_value4_997200", uint64(1)).Return(uint64(11), nil)
+	client.EXPECT().Increment("domain_key4_value4", uint64(1)).Return(uint64(11), nil)
 
 	request := common.NewRateLimitRequest("domain", [][][2]string{{{"key4", "value4"}}}, 1)
 
@@ -356,11 +356,11 @@ func TestNearLimit(t *testing.T) {
 	assert.Equal(uint64(1), limits[0].Stats.WithinLimit.Value())
 
 	// Test Near Limit Stats. At Near Limit Ratio, still OK
-	timeSource.EXPECT().UnixNow().Return(int64(1000000)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key4_value4_997200"}).Return(
-		getMultiResult(map[string]int{"domain_key4_value4_997200": 12}), nil,
+	timeSource.EXPECT().UnixNow().Return(int64(1000000)).MaxTimes(2)
+	client.EXPECT().GetMulti([]string{"domain_key4_value4"}).Return(
+		getMultiResult(map[string]int{"domain_key4_value4": 12}), nil,
 	)
-	client.EXPECT().Increment("domain_key4_value4_997200", uint64(1)).Return(uint64(13), nil)
+	client.EXPECT().Increment("domain_key4_value4", uint64(1)).Return(uint64(13), nil)
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{
@@ -374,11 +374,11 @@ func TestNearLimit(t *testing.T) {
 
 	// Test Near Limit Stats. We went OVER_LIMIT, but the near_limit counter only increases
 	// when we are near limit, not after we have passed the limit.
-	timeSource.EXPECT().UnixNow().Return(int64(1000000)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key4_value4_997200"}).Return(
-		getMultiResult(map[string]int{"domain_key4_value4_997200": 15}), nil,
+	timeSource.EXPECT().UnixNow().Return(int64(1000000)).MaxTimes(2)
+	client.EXPECT().GetMulti([]string{"domain_key4_value4"}).Return(
+		getMultiResult(map[string]int{"domain_key4_value4": 15}), nil,
 	)
-	client.EXPECT().Increment("domain_key4_value4_997200", uint64(1)).Return(uint64(16), nil)
+	client.EXPECT().Increment("domain_key4_value4", uint64(1)).Return(uint64(16), nil)
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{
@@ -392,11 +392,11 @@ func TestNearLimit(t *testing.T) {
 
 	// Now test hitsAddend that is greater than 1
 	// All of it under limit, under near limit
-	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key5_value5_1234"}).Return(
-		getMultiResult(map[string]int{"domain_key5_value5_1234": 2}), nil,
+	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(2)
+	client.EXPECT().GetMulti([]string{"domain_key5_value5"}).Return(
+		getMultiResult(map[string]int{"domain_key5_value5": 2}), nil,
 	)
-	client.EXPECT().Increment("domain_key5_value5_1234", uint64(3)).Return(uint64(5), nil)
+	client.EXPECT().Increment("domain_key5_value5", uint64(3)).Return(uint64(5), nil)
 
 	request = common.NewRateLimitRequest("domain", [][][2]string{{{"key5", "value5"}}}, 3)
 	limits = []*config.RateLimit{config.NewRateLimit(20, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key5_value5"), false, false, "", nil, false)}
@@ -410,11 +410,11 @@ func TestNearLimit(t *testing.T) {
 	assert.Equal(uint64(3), limits[0].Stats.WithinLimit.Value())
 
 	// All of it under limit, some over near limit
-	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key6_value6_1234"}).Return(
-		getMultiResult(map[string]int{"domain_key6_value6_1234": 5}), nil,
+	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(2)
+	client.EXPECT().GetMulti([]string{"domain_key6_value6"}).Return(
+		getMultiResult(map[string]int{"domain_key6_value6": 5}), nil,
 	)
-	client.EXPECT().Increment("domain_key6_value6_1234", uint64(2)).Return(uint64(7), nil)
+	client.EXPECT().Increment("domain_key6_value6", uint64(2)).Return(uint64(7), nil)
 
 	request = common.NewRateLimitRequest("domain", [][][2]string{{{"key6", "value6"}}}, 2)
 	limits = []*config.RateLimit{config.NewRateLimit(8, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key6_value6"), false, false, "", nil, false)}
@@ -428,11 +428,11 @@ func TestNearLimit(t *testing.T) {
 	assert.Equal(uint64(2), limits[0].Stats.WithinLimit.Value())
 
 	// All of it under limit, all of it over near limit
-	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key7_value7_1234"}).Return(
-		getMultiResult(map[string]int{"domain_key7_value7_1234": 16}), nil,
+	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(2)
+	client.EXPECT().GetMulti([]string{"domain_key7_value7"}).Return(
+		getMultiResult(map[string]int{"domain_key7_value7": 16}), nil,
 	)
-	client.EXPECT().Increment("domain_key7_value7_1234", uint64(3)).Return(uint64(19), nil)
+	client.EXPECT().Increment("domain_key7_value7", uint64(3)).Return(uint64(19), nil)
 
 	request = common.NewRateLimitRequest("domain", [][][2]string{{{"key7", "value7"}}}, 3)
 	limits = []*config.RateLimit{config.NewRateLimit(20, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key7_value7"), false, false, "", nil, false)}
@@ -446,11 +446,11 @@ func TestNearLimit(t *testing.T) {
 	assert.Equal(uint64(3), limits[0].Stats.WithinLimit.Value())
 
 	// Some of it over limit, all of it over near limit
-	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key8_value8_1234"}).Return(
-		getMultiResult(map[string]int{"domain_key8_value8_1234": 19}), nil,
+	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(2)
+	client.EXPECT().GetMulti([]string{"domain_key8_value8"}).Return(
+		getMultiResult(map[string]int{"domain_key8_value8": 19}), nil,
 	)
-	client.EXPECT().Increment("domain_key8_value8_1234", uint64(3)).Return(uint64(22), nil)
+	client.EXPECT().Increment("domain_key8_value8", uint64(3)).Return(uint64(22), nil)
 
 	request = common.NewRateLimitRequest("domain", [][][2]string{{{"key8", "value8"}}}, 3)
 	limits = []*config.RateLimit{config.NewRateLimit(20, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key8_value8"), false, false, "", nil, false)}
@@ -464,11 +464,11 @@ func TestNearLimit(t *testing.T) {
 	assert.Equal(uint64(0), limits[0].Stats.WithinLimit.Value())
 
 	// Some of it in all three places
-	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key9_value9_1234"}).Return(
-		getMultiResult(map[string]int{"domain_key9_value9_1234": 15}), nil,
+	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(2)
+	client.EXPECT().GetMulti([]string{"domain_key9_value9"}).Return(
+		getMultiResult(map[string]int{"domain_key9_value9": 15}), nil,
 	)
-	client.EXPECT().Increment("domain_key9_value9_1234", uint64(7)).Return(uint64(22), nil)
+	client.EXPECT().Increment("domain_key9_value9", uint64(7)).Return(uint64(22), nil)
 
 	request = common.NewRateLimitRequest("domain", [][][2]string{{{"key9", "value9"}}}, 7)
 	limits = []*config.RateLimit{config.NewRateLimit(20, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key9_value9"), false, false, "", nil, false)}
@@ -482,11 +482,11 @@ func TestNearLimit(t *testing.T) {
 	assert.Equal(uint64(0), limits[0].Stats.WithinLimit.Value())
 
 	// all of it over limit
-	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key10_value10_1234"}).Return(
-		getMultiResult(map[string]int{"domain_key10_value10_1234": 27}), nil,
+	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(2)
+	client.EXPECT().GetMulti([]string{"domain_key10_value10"}).Return(
+		getMultiResult(map[string]int{"domain_key10_value10": 27}), nil,
 	)
-	client.EXPECT().Increment("domain_key10_value10_1234", uint64(3)).Return(uint64(30), nil)
+	client.EXPECT().Increment("domain_key10_value10", uint64(3)).Return(uint64(30), nil)
 
 	request = common.NewRateLimitRequest("domain", [][][2]string{{{"key10", "value10"}}}, 3)
 	limits = []*config.RateLimit{config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key10_value10"), false, false, "", nil, false)}
@@ -518,14 +518,14 @@ func TestMemcacheWithJitter(t *testing.T) {
 	jitterSource.EXPECT().Int63().Return(int64(100))
 
 	// Key is not found in memcache
-	client.EXPECT().GetMulti([]string{"domain_key_value_1234"}).Return(nil, nil)
+	client.EXPECT().GetMulti([]string{"domain_key_value"}).Return(nil, nil)
 	// First increment attempt will fail
-	client.EXPECT().Increment("domain_key_value_1234", uint64(1)).Return(
+	client.EXPECT().Increment("domain_key_value", uint64(1)).Return(
 		uint64(0), memcache.ErrCacheMiss)
 	// Add succeeds
 	client.EXPECT().Add(
 		&memcache.Item{
-			Key:   "domain_key_value_1234",
+			Key:   "domain_key_value",
 			Value: []byte(strconv.FormatUint(1, 10)),
 			// 1 second + 100 seconds of jitter
 			Expiration: int32(101),
@@ -560,19 +560,19 @@ func TestMemcacheAdd(t *testing.T) {
 	// Test a race condition with the initial add
 	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
 
-	client.EXPECT().GetMulti([]string{"domain_key_value_1234"}).Return(nil, nil)
-	client.EXPECT().Increment("domain_key_value_1234", uint64(1)).Return(
+	client.EXPECT().GetMulti([]string{"domain_key_value"}).Return(nil, nil)
+	client.EXPECT().Increment("domain_key_value", uint64(1)).Return(
 		uint64(0), memcache.ErrCacheMiss)
 	// Add fails, must have been a race condition
 	client.EXPECT().Add(
 		&memcache.Item{
-			Key:        "domain_key_value_1234",
+			Key:        "domain_key_value",
 			Value:      []byte(strconv.FormatUint(1, 10)),
 			Expiration: int32(1),
 		},
 	).Return(memcache.ErrNotStored)
 	// Should work the second time, since some other client added the key.
-	client.EXPECT().Increment("domain_key_value_1234", uint64(1)).Return(
+	client.EXPECT().Increment("domain_key_value", uint64(1)).Return(
 		uint64(2), nil)
 
 	request := common.NewRateLimitRequest("domain", [][][2]string{{{"key", "value"}}}, 1)
@@ -588,12 +588,12 @@ func TestMemcacheAdd(t *testing.T) {
 
 	// A rate limit with 1-minute window
 	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key2_value2_1200"}).Return(nil, nil)
-	client.EXPECT().Increment("domain_key2_value2_1200", uint64(1)).Return(
+	client.EXPECT().GetMulti([]string{"domain_key2_value2"}).Return(nil, nil)
+	client.EXPECT().Increment("domain_key2_value2", uint64(1)).Return(
 		uint64(0), memcache.ErrCacheMiss)
 	client.EXPECT().Add(
 		&memcache.Item{
-			Key:        "domain_key2_value2_1200",
+			Key:        "domain_key2_value2",
 			Value:      []byte(strconv.FormatUint(1, 10)),
 			Expiration: int32(60),
 		},
@@ -667,10 +667,10 @@ func TestMemcachedTracer(t *testing.T) {
 	cache := memcached.NewRateLimitCacheImpl(client, timeSource, nil, 0, nil, sm, 0.8, "")
 
 	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
-	client.EXPECT().GetMulti([]string{"domain_key_value_1234"}).Return(
-		getMultiResult(map[string]int{"domain_key_value_1234": 4}), nil,
+	client.EXPECT().GetMulti([]string{"domain_key_value"}).Return(
+		getMultiResult(map[string]int{"domain_key_value": 4}), nil,
 	)
-	client.EXPECT().Increment("domain_key_value_1234", uint64(1)).Return(uint64(5), nil)
+	client.EXPECT().Increment("domain_key_value", uint64(1)).Return(uint64(5), nil)
 
 	request := common.NewRateLimitRequest("domain", [][][2]string{{{"key", "value"}}}, 1)
 	limits := []*config.RateLimit{config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key_value"), false, false, "", nil, false)}

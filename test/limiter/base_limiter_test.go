@@ -27,14 +27,13 @@ func TestGenerateCacheKeys(t *testing.T) {
 	jitterSource := mock_utils.NewMockJitterRandSource(controller)
 	statsStore := stats.NewStore(stats.NewNullSink(), false)
 	sm := mockstats.NewMockStatManager(statsStore)
-	timeSource.EXPECT().UnixNow().Return(int64(1234))
 	baseRateLimit := limiter.NewBaseRateLimit(timeSource, rand.New(jitterSource), 3600, nil, 0.8, "", sm)
 	request := common.NewRateLimitRequest("domain", [][][2]string{{{"key", "value"}}}, 1)
 	limits := []*config.RateLimit{config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key_value"), false, false, "", nil, false)}
 	assert.Equal(uint64(0), limits[0].Stats.TotalHits.Value())
 	cacheKeys := baseRateLimit.GenerateCacheKeys(request, limits, 1)
 	assert.Equal(1, len(cacheKeys))
-	assert.Equal("domain_key_value_1234", cacheKeys[0].Key)
+	assert.Equal("domain_key_value", cacheKeys[0].Key)
 	assert.Equal(uint64(1), limits[0].Stats.TotalHits.Value())
 }
 
@@ -46,14 +45,13 @@ func TestGenerateCacheKeysPrefix(t *testing.T) {
 	jitterSource := mock_utils.NewMockJitterRandSource(controller)
 	statsStore := stats.NewStore(stats.NewNullSink(), false)
 	sm := mockstats.NewMockStatManager(statsStore)
-	timeSource.EXPECT().UnixNow().Return(int64(1234))
 	baseRateLimit := limiter.NewBaseRateLimit(timeSource, rand.New(jitterSource), 3600, nil, 0.8, "prefix:", sm)
 	request := common.NewRateLimitRequest("domain", [][][2]string{{{"key", "value"}}}, 1)
 	limits := []*config.RateLimit{config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key_value"), false, false, "", nil, false)}
 	assert.Equal(uint64(0), limits[0].Stats.TotalHits.Value())
 	cacheKeys := baseRateLimit.GenerateCacheKeys(request, limits, 1)
 	assert.Equal(1, len(cacheKeys))
-	assert.Equal("prefix:domain_key_value_1234", cacheKeys[0].Key)
+	assert.Equal("prefix:domain_key_value", cacheKeys[0].Key)
 	assert.Equal(uint64(1), limits[0].Stats.TotalHits.Value())
 }
 
@@ -76,11 +74,11 @@ func TestNoOverLimitWithLocalCache(t *testing.T) {
 	sm := mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false))
 	baseRateLimit := limiter.NewBaseRateLimit(nil, nil, 3600, nil, 0.8, "", sm)
 	// Returns false, as local cache is nil.
-	assert.Equal(false, baseRateLimit.IsOverLimitWithLocalCache("domain_key_value_1234"))
+	assert.Equal(false, baseRateLimit.IsOverLimitWithLocalCache("domain_key_value"))
 	localCache := freecache.NewCache(100)
 	baseRateLimitWithLocalCache := limiter.NewBaseRateLimit(nil, nil, 3600, localCache, 0.8, "", sm)
 	// Returns false, as local cache does not contain value for cache key.
-	assert.Equal(false, baseRateLimitWithLocalCache.IsOverLimitWithLocalCache("domain_key_value_1234"))
+	assert.Equal(false, baseRateLimitWithLocalCache.IsOverLimitWithLocalCache("domain_key_value"))
 }
 
 func TestGetResponseStatusEmptyKey(t *testing.T) {

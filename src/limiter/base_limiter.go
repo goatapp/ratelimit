@@ -48,11 +48,11 @@ func (this *BaseRateLimiter) GenerateCacheKeys(request *pb.RateLimitRequest,
 	limits []*config.RateLimit, hitsAddend uint32) []CacheKey {
 	assert.Assert(len(request.Descriptors) == len(limits))
 	cacheKeys := make([]CacheKey, len(request.Descriptors))
-	now := this.TimeSource.UnixNow()
+
 	for i := 0; i < len(request.Descriptors); i++ {
 		// generateCacheKey() returns an empty string in the key if there is no limit
 		// so that we can keep the arrays all the same size.
-		cacheKeys[i] = this.cacheKeyGenerator.GenerateCacheKey(request.Domain, request.Descriptors[i], limits[i], now)
+		cacheKeys[i] = this.cacheKeyGenerator.GenerateCacheKey(request.Domain, request.Descriptors[i], limits[i])
 		// Increase statistics for limits hit by their respective requests.
 		if limits[i] != nil {
 			limits[i].Stats.TotalHits.Add(uint64(hitsAddend))
@@ -130,12 +130,15 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(ctx context.Context, ke
 		}
 	}
 
-	// If the limit is in ShadowMode, it should be always return OK
-	if isOverLimit && limitInfo.limit.ShadowMode {
-		logger.Debug(ctx, fmt.Sprintf("Limit with key %s, is in shadow_mode", limitInfo.limit.FullKey))
-		responseDescriptorStatus.Code = pb.RateLimitResponse_OK
-		// Increase shadow mode stats if the limit was actually over the limit
-		this.increaseShadowModeStats(isOverLimitWithLocalCache, limitInfo, hitsAddend)
+	if isOverLimit {
+		if limitInfo.limit.ShadowMode {
+			logger.Debug(ctx, fmt.Sprintf("Limit with key %s, is in shadow_mode", limitInfo.limit.FullKey))
+			responseDescriptorStatus.Code = pb.RateLimitResponse_OK
+			// Increase shadow mode stats if the limit was actually over the limit
+			this.increaseShadowModeStats(isOverLimitWithLocalCache, limitInfo, hitsAddend)
+		} else {
+			logger.Debug(ctx, fmt.Sprintf("Limit with key %s, is over_limit", limitInfo.limit.FullKey))
+		}
 	}
 
 	return responseDescriptorStatus
