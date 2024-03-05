@@ -24,33 +24,72 @@ import (
 )
 
 var script = `
--- ARGV[1] = entry key
--- ARGV[2] = expiration entry key
--- ARGV[3] = expiration time
--- ARGV[4] = current time
--- ARGV[5] = increment count
-local expires_at = tonumber(redis.call("get", ARGV[2]))
+-- ARGV[1] = rate limit key
+-- ARGV[2] = timestamp key
+-- ARGV[3] = tokens per replenish period
+-- ARGV[4] = token limit
+-- ARGV[5] = replenish period
+-- ARGV[6] = permit count
+-- ARGV[7] = current time
+-- Prepare the input and force the correct data types.
+local limit = tonumber(ARGV[4])
+local rate = tonumber(ARGV[3])
+local period = tonumber(ARGV[5])
+local requested = tonumber(ARGV[6])
+local now = tonumber(ARGV[7])
 
-if not expires_at or expires_at < tonumber(ARGV[4]) then
-	-- this is either a brand new window,
-	-- or this window has closed, but redis hasn't cleaned up the key yet
-	-- (redis will clean it up in one more second)
-	-- initialize a new rate limit window
-	redis.call("set", ARGV[1], 0)
-	redis.call("set", ARGV[2], ARGV[3])
-	-- tell Redis to clean this up _one second after_ the expires_at time (clock differences).
-	-- (Redis will only clean up these keys long after the window has passed)
-	redis.call("expireat", ARGV[1], ARGV[3] + 1)
-	redis.call("expireat", ARGV[2], ARGV[3] + 1)
-	-- since the database was updated, return the new value
-	expires_at = ARGV[3]
+-- Load the current state from Redis. We use MGET to save a round-trip.
+local state = redis.call('MGET', ARGV[1], ARGV[2])
+local current_tokens = tonumber(state[1]) or limit
+local last_refreshed = tonumber(state[2]) or 0
+
+-- Calculate the time and replenishment periods elapsed since the last call.
+local time_since_last_refreshed = math.max(0, now - last_refreshed)
+local periods_since_last_refreshed = math.floor(time_since_last_refreshed / period)
+
+-- Now we have all the info we need to calculate the current tokens based on the elapsed time.
+current_tokens = math.min(limit, current_tokens + (periods_since_last_refreshed * rate))
+
+-- We are also able to calculate the time of the last replenishment, which we store and use
+-- to calculate the time after which a client may retry if they are rate limited.
+local time_of_last_replenishment = now
+if last_refreshed > 0 then
+	time_of_last_replenishment = last_refreshed + (periods_since_last_refreshed * period)
 end
 
--- now that the window either already exists or it was freshly initialized,
--- increment the counter("incrby" returns a number)
-local current = redis.call("incrby", ARGV[1], ARGV[5])
+-- If the bucket contains enough tokens for the current request, we remove the tokens.
+local allowed = current_tokens >= requested
+if allowed then
+	current_tokens = current_tokens - requested
+end
 
-return { current, expires_at }`
+-- In order to remove rate limit keys automatically from the database, we calculate a TTL
+-- based on the worst-case scenario for the bucket to fill up again.
+-- The worst case is when the bucket is empty and the last replenishment adds less tokens than available.
+local periods_until_full = math.ceil(limit / rate)
+local ttl = math.ceil(periods_until_full * period)
+
+-- We only store the new state in the database if the request was granted.
+-- This avoids rounding issues and edge cases which can occur if many requests are rate limited.
+if allowed then
+	redis.call('SET', ARGV[1], current_tokens, 'PX', ttl)
+	redis.call('SET', ARGV[2], time_of_last_replenishment, 'PX', ttl)
+end
+
+-- Before we return, we can now also calculate when the client may retry again if they are rate limited.
+local retry_after = 0
+if not allowed then
+	retry_after = period - (now - time_of_last_replenishment)
+end
+
+-- normalize to an integer
+if allowed then
+	allowed = 1
+else
+	allowed = 0
+end
+
+return { current_tokens, retry_after, allowed }`
 
 var evalScript = radix.NewEvalScript(script)
 
@@ -67,13 +106,15 @@ type fixedRateLimitCacheImpl struct {
 	baseRateLimiter                    *limiter.BaseRateLimiter
 }
 
-func pipelineAppendScript(client Client, pipeline *Pipeline, key string, hitsAddend uint32, expirationTime, currentTime int64, result *[]int64) {
+func pipelineAppendScript(client Client, pipeline *Pipeline, key string, hitsAddend, tokenLimit, tokensPerReplenishPeriod uint32, replenishPeriod, currentTime int64, result *[]int64) {
 	*pipeline = client.PipeScriptAppend(*pipeline, result, evalScript,
 		key,
 		fmt.Sprintf("%s:expires", key),
-		strconv.FormatInt(expirationTime, 10),
-		strconv.FormatInt(currentTime, 10),
-		strconv.FormatInt(int64(hitsAddend), 10))
+		strconv.FormatInt(int64(tokensPerReplenishPeriod), 10),
+		strconv.FormatInt(int64(tokenLimit), 10),
+		strconv.FormatInt(replenishPeriod, 10),
+		strconv.FormatInt(int64(hitsAddend), 10),
+		strconv.FormatInt(currentTime, 10))
 }
 
 func pipelineAppendtoGet(client Client, pipeline *Pipeline, key string, result *uint32) {
@@ -96,7 +137,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 	isOverLimitWithLocalCache := make([]bool, len(request.Descriptors))
 	results := make([][]int64, len(request.Descriptors))
 	for i := range results {
-		results[i] = make([]int64, 2)
+		results[i] = make([]int64, 3)
 	}
 	currentCount := make([]uint32, len(request.Descriptors))
 	var pipeline, perSecondPipeline, pipelineToGet, perSecondPipelineToGet Pipeline
@@ -186,7 +227,9 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 		}
 	}
 
-	// Now, actually setup the pipeline, skipping empty cache keys.
+	replenishPeriod := time.Duration(1 * int64(time.Second)).Milliseconds()
+
+	// Now, actually set up the pipeline, skipping empty cache keys.
 	for i, cacheKey := range cacheKeys {
 		if cacheKey.Key == "" || overlimitIndexes[i] {
 			continue
@@ -194,32 +237,32 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 
 		logger.Debug(ctx, fmt.Sprintf("looking up cache key: %s", cacheKey.Key))
 
-		expirationSeconds := utils.UnitToDivider(limits[i].Limit.Unit)
-		if this.baseRateLimiter.ExpirationJitterMaxSeconds > 0 {
-			expirationSeconds += this.baseRateLimiter.JitterRand.Int63n(this.baseRateLimiter.ExpirationJitterMaxSeconds)
-		}
-
+		// unitsPerSecond := utils.UnitToDivider(limits[i].Limit.Unit)
 		unixTime := this.baseRateLimiter.TimeSource.UnixNow()
-		expirationTime := time.Unix(unixTime, 0).Add(time.Duration(expirationSeconds * int64(time.Second))).Unix()
+
 		// Use the perSecondConn if it is not nil and the cacheKey represents a per second Limit.
 		if this.perSecondClient != nil && cacheKey.PerSecond {
 			if perSecondPipeline == nil {
 				perSecondPipeline = Pipeline{}
 			}
+
+			hitsAddendToUse := hitsAddendForRedis
 			if nearlimitIndexes[i] {
-				pipelineAppendScript(this.perSecondClient, &perSecondPipeline, cacheKey.Key, hitsAddend, expirationTime, unixTime, &results[i])
-			} else {
-				pipelineAppendScript(this.perSecondClient, &perSecondPipeline, cacheKey.Key, hitsAddendForRedis, expirationTime, unixTime, &results[i])
+				hitsAddendToUse = hitsAddend
 			}
+
+			pipelineAppendScript(this.perSecondClient, &perSecondPipeline, cacheKey.Key, hitsAddendToUse, limits[i].Limit.RequestsPerUnit, limits[i].Limit.RequestsPerUnit, replenishPeriod, unixTime, &results[i])
 		} else {
 			if pipeline == nil {
 				pipeline = Pipeline{}
 			}
+
+			hitsAddendToUse := hitsAddendForRedis
 			if nearlimitIndexes[i] {
-				pipelineAppendScript(this.client, &pipeline, cacheKey.Key, hitsAddend, expirationTime, unixTime, &results[i])
-			} else {
-				pipelineAppendScript(this.client, &pipeline, cacheKey.Key, hitsAddendForRedis, expirationTime, unixTime, &results[i])
+				hitsAddendToUse = hitsAddend
 			}
+
+			pipelineAppendScript(this.client, &pipeline, cacheKey.Key, hitsAddendToUse, limits[i].Limit.RequestsPerUnit, limits[i].Limit.RequestsPerUnit, replenishPeriod, unixTime, &results[i])
 		}
 	}
 
@@ -243,9 +286,26 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 	responseDescriptorStatuses := make([]*pb.RateLimitResponse_DescriptorStatus,
 		len(request.Descriptors))
 	for i, cacheKey := range cacheKeys {
+		limitAfterIncrease := uint32(0)
+		limitBeforeIncrease := uint32(0)
+		if limits[i] != nil {
+			currentTokens := uint32(results[i][0])
+			allowed := results[i][2] != 0
 
-		limitAfterIncrease := uint32(results[i][0])
-		limitBeforeIncrease := limitAfterIncrease - hitsAddend
+			if currentTokens == 0 {
+				limitAfterIncrease = limits[i].Limit.RequestsPerUnit
+				if !allowed {
+					limitAfterIncrease = limitAfterIncrease + hitsAddend
+				}
+			} else {
+				limitAfterIncrease = hitsAddend + limits[i].Limit.RequestsPerUnit - currentTokens - 1
+				if !allowed {
+					limitAfterIncrease = limitAfterIncrease + 1
+				}
+			}
+
+			limitBeforeIncrease = limitAfterIncrease - hitsAddend
+		}
 
 		limitInfo := limiter.NewRateLimitInfo(limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0)
 
