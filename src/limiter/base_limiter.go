@@ -99,7 +99,7 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(ctx context.Context, ke
 		// The nearLimitThreshold is the number of requests that can be made before hitting the nearLimitRatio.
 		// We need to know it in both the OK and OVER_LIMIT scenarios.
 		limitInfo.nearLimitThreshold = uint32(math.Floor(float64(float32(limitInfo.overLimitThreshold) * this.nearLimitRatio)))
-		logger.Debug(ctx, fmt.Sprintf("cache key: %s current: %d", key, limitInfo.limitAfterIncrease))
+
 		if limitInfo.limitAfterIncrease > limitInfo.overLimitThreshold {
 			isOverLimit = true
 			responseDescriptorStatus = this.generateResponseDescriptorStatus(pb.RateLimitResponse_OVER_LIMIT,
