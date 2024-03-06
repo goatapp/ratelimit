@@ -195,8 +195,9 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 					continue
 				}
 				// Now fetch the pipeline.
-				limitBeforeIncrease := currentCount[i]
-				limitAfterIncrease := limitBeforeIncrease + hitsAddend
+				allowed := currentCount[i] >= hitsAddend
+				limitAfterIncrease := getLimitAfterIncrease(currentCount[i], limits[i].Limit.RequestsPerUnit, hitsAddend, allowed)
+				limitBeforeIncrease := limitAfterIncrease - hitsAddend
 
 				limitInfo := limiter.NewRateLimitInfo(limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0)
 
@@ -245,7 +246,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 			}
 
 			hitsAddendToUse := hitsAddendForRedis
-			if nearlimitIndexes[i] {
+			if !nearlimitIndexes[i] {
 				hitsAddendToUse = hitsAddend
 			}
 
@@ -256,7 +257,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 			}
 
 			hitsAddendToUse := hitsAddendForRedis
-			if nearlimitIndexes[i] {
+			if !nearlimitIndexes[i] {
 				hitsAddendToUse = hitsAddend
 			}
 
@@ -290,18 +291,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 			currentTokens := uint32(results[i][0])
 			allowed := results[i][2] != 0
 
-			if currentTokens == 0 {
-				limitAfterIncrease = limits[i].Limit.RequestsPerUnit
-				if !allowed {
-					limitAfterIncrease = limitAfterIncrease + hitsAddend
-				}
-			} else {
-				limitAfterIncrease = hitsAddend + limits[i].Limit.RequestsPerUnit - currentTokens
-				if allowed {
-					limitAfterIncrease = limitAfterIncrease - 1
-				}
-			}
-
+			limitAfterIncrease = getLimitAfterIncrease(currentTokens, limits[i].Limit.RequestsPerUnit, hitsAddend, allowed)
 			limitBeforeIncrease = limitAfterIncrease - hitsAddend
 		}
 
@@ -313,6 +303,24 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 	}
 
 	return responseDescriptorStatuses
+}
+
+func getLimitAfterIncrease(currentTokens, requestsPerUnit, hitsAddend uint32, allowed bool) uint32 {
+	limitAfterIncrease := uint32(0)
+
+	if currentTokens == 0 {
+		limitAfterIncrease = requestsPerUnit
+		if !allowed {
+			limitAfterIncrease = limitAfterIncrease + hitsAddend
+		}
+	} else {
+		limitAfterIncrease = hitsAddend + requestsPerUnit - currentTokens
+		if allowed {
+			limitAfterIncrease = limitAfterIncrease - 1
+		}
+	}
+
+	return limitAfterIncrease
 }
 
 // Flush() is a no-op with redis since quota reads and updates happen synchronously.

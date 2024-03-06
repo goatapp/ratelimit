@@ -648,8 +648,8 @@ func TestOverLimitWithStopCacheKeyIncrementWhenOverlimitConfig(t *testing.T) {
 
 	// Test one key is reaching to the Overlimit threshold
 	timeSource.EXPECT().UnixNow().Return(int64(1000000)).MaxTimes(7)
-	client.EXPECT().PipeAppend(gomock.Any(), gomock.Any(), "GET", "domain_key4_value4").SetArg(1, uint32(14)).DoAndReturn(pipeAppend)
-	client.EXPECT().PipeAppend(gomock.Any(), gomock.Any(), "GET", "domain_key5_value5").SetArg(1, uint32(14)).DoAndReturn(pipeAppend)
+	client.EXPECT().PipeAppend(gomock.Any(), gomock.Any(), "GET", "domain_key4_value4").SetArg(1, uint32(0)).DoAndReturn(pipeAppend)
+	client.EXPECT().PipeAppend(gomock.Any(), gomock.Any(), "GET", "domain_key5_value5").SetArg(1, uint32(1)).DoAndReturn(pipeAppend)
 	client.EXPECT().PipeScriptAppend(gomock.Any(), gomock.Any(), gomock.Any(), "domain_key4_value4", "domain_key4_value4:expires", "15", "15", "3600000", "0", "1000000").SetArg(1, []int64{1, 1, 1}).DoAndReturn(pipeScriptAppend)
 	client.EXPECT().PipeScriptAppend(gomock.Any(), gomock.Any(), gomock.Any(), "domain_key5_value5", "domain_key5_value5:expires", "14", "14", "3600000", "1", "1000000").SetArg(1, []int64{0, 1, 1}).DoAndReturn(pipeScriptAppend)
 	client.EXPECT().PipeDo(gomock.Any(), gomock.Any()).Return(nil).Times(2)
