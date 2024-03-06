@@ -227,8 +227,6 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 		}
 	}
 
-	replenishPeriod := time.Duration(1 * int64(time.Second)).Milliseconds()
-
 	// Now, actually set up the pipeline, skipping empty cache keys.
 	for i, cacheKey := range cacheKeys {
 		if cacheKey.Key == "" || overlimitIndexes[i] {
@@ -237,7 +235,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 
 		logger.Debug(ctx, fmt.Sprintf("looking up cache key: %s", cacheKey.Key))
 
-		// unitsPerSecond := utils.UnitToDivider(limits[i].Limit.Unit)
+		replenishPeriod := time.Duration(utils.UnitToDivider(limits[i].Limit.Unit) * int64(time.Second)).Milliseconds()
 		unixTime := this.baseRateLimiter.TimeSource.UnixNow()
 
 		// Use the perSecondConn if it is not nil and the cacheKey represents a per second Limit.
@@ -298,9 +296,9 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 					limitAfterIncrease = limitAfterIncrease + hitsAddend
 				}
 			} else {
-				limitAfterIncrease = hitsAddend + limits[i].Limit.RequestsPerUnit - currentTokens - 1
-				if !allowed {
-					limitAfterIncrease = limitAfterIncrease + 1
+				limitAfterIncrease = hitsAddend + limits[i].Limit.RequestsPerUnit - currentTokens
+				if allowed {
+					limitAfterIncrease = limitAfterIncrease - 1
 				}
 			}
 
