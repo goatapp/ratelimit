@@ -294,7 +294,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 			limitAfterIncrease = getLimitAfterIncrease(currentTokens, limits[i].Limit.RequestsPerUnit, hitsAddend, allowed)
 			limitBeforeIncrease = limitAfterIncrease - hitsAddend
 
-			logger.Debug(ctx, "pipeline result", logger.WithValue("redisKey", cacheKey.Key), logger.WithValue("redisCurrentTokens", currentTokens),
+			logger.Debug(ctx, fmt.Sprintf("pipeline result cache key %s current: %d", cacheKey.Key, limitAfterIncrease), logger.WithValue("redisKey", cacheKey.Key), logger.WithValue("redisCurrentTokens", currentTokens),
 				logger.WithValue("redisAllowed", allowed), logger.WithValue("redisRetryAfter", results[i][1]), logger.WithValue("redisLimitAfterIncrease", limitAfterIncrease))
 		}
 
