@@ -336,7 +336,7 @@ func TestNearLimit(t *testing.T) {
 	assert.Equal(uint64(1), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(1), limits[0].Stats.NearLimit.Value())
 	assert.Equal(uint64(2), limits[0].Stats.WithinLimit.Value())
-	""
+
 	// Now test hitsAddend that is greater than 1
 	// All of it under limit, under near limit
 	timeSource.EXPECT().UnixNow().Return(int64(1234)).MaxTimes(3)
