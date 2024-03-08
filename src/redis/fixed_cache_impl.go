@@ -227,6 +227,9 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 		logger.Debug(ctx, fmt.Sprintf("looking up cache key: %s", cacheKey.Key))
 
 		replenishPeriod := time.Duration(utils.UnitToDivider(limits[i].Limit.Unit) * int64(time.Second)).Milliseconds()
+		if replenishPeriod == 1000 { // adjusting the period for RPS since in practice the TTL expires later than expected leading to over-counting
+			replenishPeriod = 500
+		}
 
 		unixTime := this.baseRateLimiter.TimeSource.UnixNow()
 
