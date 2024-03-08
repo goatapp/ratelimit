@@ -28,9 +28,9 @@ var script = `
 -- ARGV[2] = timestamp key
 -- ARGV[3] = tokens per replenish period
 -- ARGV[4] = token limit
--- ARGV[5] = replenish period
+-- ARGV[5] = replenish period (milliseconds)
 -- ARGV[6] = permit count
--- ARGV[7] = current time
+-- ARGV[7] = current time (unix time milliseconds)
 -- Prepare the input and force the correct data types.
 local limit = tonumber(ARGV[4])
 local rate = tonumber(ARGV[3])

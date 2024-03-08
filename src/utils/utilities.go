@@ -9,7 +9,7 @@ import (
 
 // Interface for a time source.
 type TimeSource interface {
-	// @return the current unix time in seconds.
+	// @return the current unix time in milliseconds.
 	UnixNow() int64
 }
 
@@ -33,7 +33,7 @@ func UnitToDivider(unit pb.RateLimitResponse_RateLimit_Unit) int64 {
 
 func CalculateReset(unit *pb.RateLimitResponse_RateLimit_Unit, timeSource TimeSource) *duration.Duration {
 	sec := UnitToDivider(*unit)
-	now := timeSource.UnixNow()
+	now := timeSource.UnixNow() / 1000
 	return &duration.Duration{Seconds: sec - now%sec}
 }
 
