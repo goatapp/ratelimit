@@ -72,8 +72,8 @@ if current_tokens >= requested then
 
 -- We only store the new state in the database if the request was granted.
 -- This avoids rounding issues and edge cases which can occur if many requests are rate limited.
-	redis.call('SET', ARGV[1], current_tokens, 'PX', ttl)
-	redis.call('SET', ARGV[2], time_of_last_replenishment, 'PX', ttl)
+	redis.call('SET', ARGV[1], current_tokens, 'PXAT', ttl + now)
+	redis.call('SET', ARGV[2], time_of_last_replenishment, 'PXAT', ttl + now)
 else
 -- Before we return, we can now also calculate when the client may retry again if they are rate limited.
 	retry_after = period - (now - time_of_last_replenishment)
