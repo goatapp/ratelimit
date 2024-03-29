@@ -14,6 +14,7 @@ import (
 	"github.com/goatapp/ratelimit/src/trace"
 
 	gostats "github.com/lyft/gostats"
+	"google.golang.org/grpc/reflection"
 
 	"github.com/coocood/freecache"
 
@@ -127,6 +128,9 @@ func (runner *Runner) Run() {
 	// data-plane-api v3 rls.proto: https://github.com/envoyproxy/data-plane-api/blob/master/envoy/service/ratelimit/v3/rls.proto
 	// v2 proto is no longer supported
 	pb.RegisterRateLimitServiceServer(srv.GrpcServer(), service)
+
+	// allows grpc clients to discover the definition of the server without having the protos
+	reflection.Register(srv.GrpcServer())
 
 	srv.Start()
 }
