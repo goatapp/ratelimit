@@ -15,7 +15,7 @@ require (
 	github.com/kavu/go_reuseport v1.5.0
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/lyft/goruntime v0.3.0
-	github.com/lyft/gostats v0.4.12
+	github.com/lyft/gostats v0.4.14
 	github.com/mediocregopher/radix/v4 v4.1.4
 	github.com/stretchr/testify v1.8.4
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.46.1
