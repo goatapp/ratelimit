@@ -5,7 +5,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /go/bin/xds-server -v main/main.go
 
-FROM alpine:3.16@sha256:e4cdb7d47b06ba0a062ad2a97a7d154967c8f83934594d9f2bd3efa89292996b AS final
+FROM alpine:3.20@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d AS final
 RUN apk --no-cache add ca-certificates && apk --no-cache update
 COPY --from=build /go/bin/xds-server /bin/xds-server
 ENTRYPOINT [ "/bin/xds-server" ]
