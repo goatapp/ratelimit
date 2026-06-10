@@ -2,14 +2,12 @@ package limiter
 
 import (
 	"bytes"
-	"strconv"
 	"sync"
 
 	pb_struct "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 
-	"github.com/envoyproxy/ratelimit/src/config"
-	"github.com/envoyproxy/ratelimit/src/utils"
+	"github.com/goatapp/ratelimit/src/config"
 )
 
 type CacheKeyGenerator struct {
@@ -46,7 +44,7 @@ func isPerSecondLimit(unit pb.RateLimitResponse_RateLimit_Unit) bool {
 // @param now supplies the current unix time.
 // @return CacheKey struct.
 func (this *CacheKeyGenerator) GenerateCacheKey(
-	domain string, descriptor *pb_struct.RateLimitDescriptor, limit *config.RateLimit, now int64,
+	domain string, descriptor *pb_struct.RateLimitDescriptor, limit *config.RateLimit,
 ) CacheKey {
 	if limit == nil {
 		return CacheKey{
@@ -64,10 +62,12 @@ func (this *CacheKeyGenerator) GenerateCacheKey(
 	b.WriteByte('_')
 
 	for i, entry := range descriptor.Entries {
+		if i > 0 {
+			b.WriteByte('_')
+		}
+
 		b.WriteString(entry.Key)
 		b.WriteByte('_')
-		// If share_threshold is enabled for this entry index, use the wildcard pattern instead of the actual value
-		// Use entry index instead of key name to handle nested descriptors with same key names
 		valueToUse := entry.Value
 		if limit != nil && limit.ShareThresholdKeyPattern != nil && i < len(limit.ShareThresholdKeyPattern) {
 			if wildcardPattern := limit.ShareThresholdKeyPattern[i]; wildcardPattern != "" {
@@ -75,11 +75,7 @@ func (this *CacheKeyGenerator) GenerateCacheKey(
 			}
 		}
 		b.WriteString(valueToUse)
-		b.WriteByte('_')
 	}
-
-	divider := utils.UnitToDivider(limit.Limit.Unit)
-	b.WriteString(strconv.FormatInt((now/divider)*divider, 10))
 
 	return CacheKey{
 		Key:       b.String(),

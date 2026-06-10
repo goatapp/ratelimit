@@ -6,7 +6,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/envoyproxy/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/stats"
 )
 
 // Errors that may be raised during config parsing.

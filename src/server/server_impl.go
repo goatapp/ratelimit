@@ -16,21 +16,21 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"github.com/envoyproxy/ratelimit/src/provider"
-	"github.com/envoyproxy/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/provider"
+	"github.com/goatapp/ratelimit/src/stats"
 
 	"github.com/coocood/freecache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 	"github.com/gorilla/mux"
 	"github.com/libp2p/go-reuseport"
 	gostats "github.com/lyft/gostats"
-	logger "github.com/sirupsen/logrus"
+	logger "github.com/goatapp/ratelimit/src/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/envoyproxy/ratelimit/src/limiter"
-	"github.com/envoyproxy/ratelimit/src/settings"
+	"github.com/goatapp/ratelimit/src/limiter"
+	"github.com/goatapp/ratelimit/src/settings"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -89,20 +89,20 @@ func NewJsonHandler(svc pb.RateLimitServiceServer) func(http.ResponseWriter, *ht
 
 		body, err := io.ReadAll(request.Body)
 		if err != nil {
-			logger.Warnf("error: %s", err.Error())
+			logger.Warn(context.Background(), fmt.Sprintf("error: %s", err.Error()))
 			writeHttpStatus(writer, http.StatusBadRequest)
 			return
 		}
 
 		if err := protojson.Unmarshal(body, &req); err != nil {
-			logger.Warnf("error: %s", err.Error())
+			logger.Warn(context.Background(), fmt.Sprintf("error: %s", err.Error()))
 			writeHttpStatus(writer, http.StatusBadRequest)
 			return
 		}
 
 		resp, err := svc.ShouldRateLimit(ctx, &req)
 		if err != nil {
-			logger.Warnf("error: %s", err.Error())
+			logger.Warn(context.Background(), fmt.Sprintf("error: %s", err.Error()))
 			writeHttpStatus(writer, http.StatusBadRequest)
 			return
 		}
@@ -115,16 +115,16 @@ func NewJsonHandler(svc pb.RateLimitServiceServer) func(http.ResponseWriter, *ht
 		)
 		defer span.End()
 
-		logger.Debugf("resp:%s", resp)
+		logger.Debug(context.Background(), fmt.Sprintf("resp:%s", resp))
 		if resp == nil {
-			logger.Error("nil response")
+			logger.Error(context.Background(), "nil response")
 			writeHttpStatus(writer, http.StatusInternalServerError)
 			return
 		}
 
 		jsonResp, err := protojson.Marshal(resp)
 		if err != nil {
-			logger.Errorf("error marshaling proto3 to json: %s", err.Error())
+			logger.Error(context.Background(), fmt.Sprintf("error marshaling proto3 to json: %s", err.Error()))
 			writeHttpStatus(writer, http.StatusInternalServerError)
 			return
 		}
@@ -150,7 +150,7 @@ func getProviderImpl(s settings.Settings, statsManager stats.Manager, rootStore 
 	case "GRPC_XDS_SOTW":
 		return provider.NewXdsGrpcSotwProvider(s, statsManager)
 	default:
-		logger.Fatalf("Invalid setting for ConfigType: %s", s.ConfigType)
+		logger.Fatal(context.Background(), fmt.Sprintf("Invalid setting for ConfigType: %s", s.ConfigType))
 		panic("This line should not be reachable")
 	}
 }
@@ -164,43 +164,13 @@ func (server *server) GrpcServer() *grpc.Server {
 }
 
 func (server *server) Start(ctx context.Context) {
-	go func() {
-		logger.Warnf("Listening for debug on '%s'", server.debugAddress)
-		var err error
-		server.listenerMu.Lock()
-		server.debugListener.listener, err = reuseport.Listen("tcp", server.debugAddress)
-		server.listenerMu.Unlock()
-
-		if err != nil {
-			logger.Errorf("Failed to open debug HTTP listener: '%+v'", err)
-			return
-		}
-		err = http.Serve(server.debugListener.listener, server.debugListener.debugMux)
-		logger.Infof("Failed to start debug server '%+v'", err)
-	}()
-
 	go server.startGrpc()
 
 	server.handleGracefulShutdown(ctx)
-
-	logger.Warnf("Listening for HTTP on '%s'", server.httpAddress)
-	list, err := reuseport.Listen("tcp", server.httpAddress)
-	if err != nil {
-		logger.Fatalf("Failed to open HTTP listener: '%+v'", err)
-	}
-	srv := &http.Server{Handler: server.router}
-	server.listenerMu.Lock()
-	server.httpServer = srv
-	server.listenerMu.Unlock()
-	err = srv.Serve(list)
-
-	if err != http.ErrServerClosed {
-		logger.Fatal(err)
-	}
 }
 
 func (server *server) startGrpc() {
-	logger.Warnf("Listening for gRPC on '%s'", server.grpcAddress)
+	logger.Warn(context.Background(), fmt.Sprintf("Listening for gRPC on '%s'", server.grpcAddress))
 	var lis net.Listener
 	var err error
 
@@ -210,11 +180,11 @@ func (server *server) startGrpc() {
 	case unixDomainSocket:
 		lis, err = net.Listen("unix", server.grpcAddress)
 	default:
-		logger.Fatalf("Invalid gRPC listen type %v", server.grpcListenType)
+		logger.Fatal(context.Background(), fmt.Sprintf("Invalid gRPC listen type %v", server.grpcListenType))
 	}
 
 	if err != nil {
-		logger.Fatalf("Failed to listen for gRPC on '%s': %v", server.grpcAddress, err)
+		logger.Fatal(context.Background(), fmt.Sprintf("Failed to listen for gRPC on '%s': %v", server.grpcAddress, err))
 	}
 	server.grpcServer.Serve(lis)
 }
@@ -290,7 +260,7 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 	ret.router = mux.NewRouter()
 
 	// setup healthcheck path
-	ret.health = NewHealthChecker(health.NewServer(), "ratelimit", s.HealthyWithAtLeastOneConfigLoaded)
+	ret.health = NewHealthChecker(health.NewServer(), name, s.HealthyWithAtLeastOneConfigLoaded)
 	ret.router.Path("/healthcheck").Handler(ret.health)
 	healthpb.RegisterHealthServer(ret.grpcServer, ret.health.Server())
 
@@ -365,7 +335,7 @@ func (server *server) Stop() {
 func (server *server) handleGracefulShutdown(ctx context.Context) {
 	go func() {
 		<-ctx.Done()
-		logger.Infof("Context cancelled, stopping server")
+		logger.Info(context.Background(), "Context cancelled, stopping server")
 		server.Stop()
 	}()
 }

@@ -1,6 +1,8 @@
 package godogstats
 
 import (
+	"fmt"
+	"context"
 	"regexp"
 	"strconv"
 	"strings"
@@ -8,7 +10,7 @@ import (
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	gostats "github.com/lyft/gostats"
-	logger "github.com/sirupsen/logrus"
+	logger "github.com/goatapp/ratelimit/src/log"
 )
 
 type godogStatsSink struct {
@@ -96,7 +98,7 @@ func separateTags(name string) (string, []string) {
 		// split the name + value by the seperator
 		tagName, tagValue, isValid := strings.Cut(tagPair, sep)
 		if !isValid {
-			logger.Debugf("godogstats sink found malformed extra tag: %v, string: %v", tagPair, name)
+			logger.Debug(context.Background(), fmt.Sprintf("godogstats sink found malformed extra tag: %v, string: %v", tagPair, name))
 			continue
 		}
 		tags = append(tags, tagName+":"+tagValue)

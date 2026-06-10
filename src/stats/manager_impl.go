@@ -1,21 +1,41 @@
 package stats
 
 import (
-	gostats "github.com/lyft/gostats"
-	logger "github.com/sirupsen/logrus"
+	"context"
+	"fmt"
+	"os"
 
-	"github.com/envoyproxy/ratelimit/src/settings"
-	"github.com/envoyproxy/ratelimit/src/utils"
+	gostats "github.com/lyft/gostats"
+	logger "github.com/goatapp/ratelimit/src/log"
+
+	"github.com/goatapp/ratelimit/src/settings"
+	"github.com/goatapp/ratelimit/src/utils"
 )
 
 func NewStatManager(store gostats.Store, settings settings.Settings) *ManagerImpl {
-	serviceScope := store.ScopeWithTags("ratelimit", settings.ExtraTags).Scope("service")
+	serviceScope := store.ScopeWithTags(GetStatsScope(), settings.ExtraTags).Scope("service")
 	return &ManagerImpl{
 		store:                store,
 		rlStatsScope:         serviceScope.Scope("rate_limit"),
 		serviceStatsScope:    serviceScope,
 		shouldRateLimitScope: serviceScope.Scope("call.should_rate_limit"),
 	}
+}
+
+func GetStatsScope() string {
+	appName := os.Getenv("GOATENV_APP")
+
+	if appName == "" {
+		appName = "ratelimit"
+	}
+
+	appEnv := os.Getenv("GOATENV_ENVIRONMENT")
+
+	if appEnv == "" {
+		appEnv = "local"
+	}
+
+	return fmt.Sprintf("app.%v.%v", appName, appEnv)
 }
 
 func (this *ManagerImpl) GetStatsStore() gostats.Store {
@@ -27,7 +47,7 @@ func (this *ManagerImpl) GetStatsStore() gostats.Store {
 // @return new stats.
 func (this *ManagerImpl) NewStats(key string) RateLimitStats {
 	ret := RateLimitStats{}
-	logger.Debugf("Creating stats for key: '%s'", key)
+	logger.Debug(context.Background(), fmt.Sprintf("Creating stats for key: '%s'", key))
 	ret.Key = key
 	key = utils.SanitizeStatName(key)
 	ret.TotalHits = this.rlStatsScope.NewCounter(key + ".total_hits")

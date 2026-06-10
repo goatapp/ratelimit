@@ -12,23 +12,23 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/envoyproxy/ratelimit/src/settings"
-	"github.com/envoyproxy/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/settings"
+	"github.com/goatapp/ratelimit/src/stats"
 
-	"github.com/envoyproxy/ratelimit/src/utils"
+	"github.com/goatapp/ratelimit/src/utils"
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	ratelimitv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
-	logger "github.com/sirupsen/logrus"
+	logger "github.com/goatapp/ratelimit/src/log"
 	"golang.org/x/net/context"
 
-	"github.com/envoyproxy/ratelimit/src/assert"
-	"github.com/envoyproxy/ratelimit/src/config"
-	"github.com/envoyproxy/ratelimit/src/limiter"
-	"github.com/envoyproxy/ratelimit/src/provider"
-	"github.com/envoyproxy/ratelimit/src/redis"
-	"github.com/envoyproxy/ratelimit/src/server"
+	"github.com/goatapp/ratelimit/src/assert"
+	"github.com/goatapp/ratelimit/src/config"
+	"github.com/goatapp/ratelimit/src/limiter"
+	"github.com/goatapp/ratelimit/src/provider"
+	"github.com/goatapp/ratelimit/src/redis"
+	"github.com/goatapp/ratelimit/src/server"
 )
 
 var tracer = otel.Tracer("ratelimit")
@@ -65,7 +65,7 @@ func (this *service) SetConfig(updateEvent provider.ConfigUpdateEvent, healthyWi
 		}
 
 		this.stats.ConfigLoadError.Inc()
-		logger.Errorf("Error loading new configuration: %s", configError.Error())
+		logger.Error(context.Background(), fmt.Sprintf("Error loading new configuration: %s", configError.Error()))
 		return
 	}
 
@@ -77,7 +77,7 @@ func (this *service) SetConfig(updateEvent provider.ConfigUpdateEvent, healthyWi
 			err = this.health.Fail(server.ConfigHealthComponentName)
 		}
 		if err != nil {
-			logger.Errorf("Unable to update health status: %s", err)
+			logger.Error(context.Background(), fmt.Sprintf("Unable to update health status: %s", err))
 		}
 	}
 
@@ -101,7 +101,7 @@ func (this *service) SetConfig(updateEvent provider.ConfigUpdateEvent, healthyWi
 		this.customHeaderResetHeader = rlSettings.HeaderRatelimitReset
 	}
 	this.configLock.Unlock()
-	logger.Info("Successfully loaded new configuration")
+	logger.Info(context.Background(), "Successfully loaded new configuration")
 }
 
 type serviceError string
@@ -125,7 +125,7 @@ func (this *service) constructLimitsToCheck(request *pb.RateLimitRequest, ctx co
 	replacing := make(map[string]bool)
 
 	for i, descriptor := range request.Descriptors {
-		if logger.IsLevelEnabled(logger.DebugLevel) {
+		if true {
 			var descriptorEntryStrings []string
 			for _, descriptorEntry := range descriptor.GetEntries() {
 				descriptorEntryStrings = append(
@@ -133,23 +133,22 @@ func (this *service) constructLimitsToCheck(request *pb.RateLimitRequest, ctx co
 					fmt.Sprintf("(%s=%s)", descriptorEntry.Key, descriptorEntry.Value),
 				)
 			}
-			logger.Debugf("got descriptor: %s", strings.Join(descriptorEntryStrings, ","))
+			logger.Debug(context.Background(), fmt.Sprintf("got descriptor: %s", strings.Join(descriptorEntryStrings, ",")))
 		}
 		limitsToCheck[i] = snappedConfig.GetLimit(ctx, request.Domain, descriptor)
-		if logger.IsLevelEnabled(logger.DebugLevel) {
+		if true {
 			if limitsToCheck[i] == nil {
-				logger.Debugf("descriptor does not match any limit, no limits applied")
+				logger.Debug(context.Background(), "descriptor does not match any limit, no limits applied")
 			} else {
 				if limitsToCheck[i].Unlimited {
-					logger.Debugf("descriptor is unlimited, not passing to the cache")
+					logger.Debug(context.Background(), "descriptor is unlimited, not passing to the cache")
 				} else {
-					logger.Debugf(
-						"applying limit: %d requests per %s, shadow_mode: %t, quota: %t",
+					logger.Debug(context.Background(), fmt.Sprintf("applying limit: %d requests per %s, shadow_mode: %t, quota: %t",
 						limitsToCheck[i].Limit.RequestsPerUnit,
 						limitsToCheck[i].Limit.Unit.String(),
 						limitsToCheck[i].ShadowMode,
 						limitsToCheck[i].QuotaMode,
-					)
+					))
 				}
 			}
 		}
@@ -173,8 +172,8 @@ func (this *service) constructLimitsToCheck(request *pb.RateLimitRequest, ctx co
 		_, exists := replacing[limit.Name]
 		if exists {
 			limitsToCheck[i] = nil
-			if logger.IsLevelEnabled(logger.DebugLevel) {
-				logger.Debugf("replacing %s", limit.Name)
+			if true {
+				logger.Debug(context.Background(), fmt.Sprintf("replacing %s", limit.Name))
 			}
 		}
 	}
@@ -196,7 +195,7 @@ func (this *service) shouldRateLimitWorker(
 	assert.Assert(len(limitsToCheck) == len(request.Descriptors))
 
 	responseDescriptorStatuses := this.cache.DoLimit(ctx, request, limitsToCheck)
-	logger.Debugf("descriptor statuses: %+v", responseDescriptorStatuses)
+	logger.Debug(context.Background(), fmt.Sprintf("descriptor statuses: %+v", responseDescriptorStatuses))
 	assert.Assert(len(limitsToCheck) == len(responseDescriptorStatuses))
 
 	response := &pb.RateLimitResponse{}
@@ -401,7 +400,7 @@ func (this *service) ShouldRateLimit(
 	ctx context.Context,
 	request *pb.RateLimitRequest,
 ) (finalResponse *pb.RateLimitResponse, finalError error) {
-	logger.Debugf("ShouldRateLimit: %+v", request)
+	logger.Debug(context.Background(), fmt.Sprintf("ShouldRateLimit: %+v", request))
 	// Generate trace
 	_, span := tracer.Start(
 		ctx, "ShouldRateLimit Execution",
@@ -418,7 +417,7 @@ func (this *service) ShouldRateLimit(
 			return
 		}
 
-		logger.Debugf("caught error during call: %v", err)
+		logger.Debug(context.Background(), fmt.Sprintf("caught error during call: %v", err))
 
 		finalResponse = nil
 		switch t := err.(type) {
@@ -438,7 +437,7 @@ func (this *service) ShouldRateLimit(
 	}()
 
 	response := this.shouldRateLimitWorker(ctx, request)
-	logger.Debugf("returning normal response: %+v", response)
+	logger.Debug(context.Background(), fmt.Sprintf("returning normal response: %+v", response))
 
 	return response, nil
 }
@@ -465,16 +464,16 @@ func NewService(cache limiter.RateLimitCache, configProvider provider.RateLimitC
 	}
 
 	if !forceStart {
-		logger.Info("Waiting for initial ratelimit config update event")
+		logger.Info(context.Background(), "Waiting for initial ratelimit config update event")
 		newService.SetConfig(<-newService.configUpdateEvent, healthyWithAtLeastOneConfigLoad)
-		logger.Info("Successfully loaded the initial ratelimit configs")
+		logger.Info(context.Background(), "Successfully loaded the initial ratelimit configs")
 	}
 
 	go func() {
 		for {
-			logger.Debug("Waiting for config update event")
+			logger.Debug(context.Background(), "Waiting for config update event")
 			updateEvent := <-newService.configUpdateEvent
-			logger.Debug("Setting config retrieved from config provider")
+			logger.Debug(context.Background(), "Setting config retrieved from config provider")
 			newService.SetConfig(updateEvent, healthyWithAtLeastOneConfigLoad)
 		}
 	}()

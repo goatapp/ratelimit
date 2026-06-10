@@ -1,194 +1,242 @@
 package redis
 
 import (
+	"context"
+	"fmt"
 	"math/rand"
+	"strconv"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/envoyproxy/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/stats"
 
 	"github.com/coocood/freecache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
-	logger "github.com/sirupsen/logrus"
-	"golang.org/x/net/context"
+	"github.com/mediocregopher/radix/v4"
 
-	"github.com/envoyproxy/ratelimit/src/config"
-	"github.com/envoyproxy/ratelimit/src/limiter"
-	"github.com/envoyproxy/ratelimit/src/utils"
+	"github.com/goatapp/ratelimit/src/config"
+	"github.com/goatapp/ratelimit/src/limiter"
+	logger "github.com/goatapp/ratelimit/src/log"
+	"github.com/goatapp/ratelimit/src/utils"
 )
+
+var script = `
+-- ARGV[1] = rate limit key
+-- ARGV[2] = timestamp key
+-- ARGV[3] = tokens per replenish period
+-- ARGV[4] = token limit
+-- ARGV[5] = replenish period (milliseconds)
+-- ARGV[6] = permit count
+-- ARGV[7] = current time (unix time milliseconds)
+local limit = tonumber(ARGV[4])
+local rate = tonumber(ARGV[3])
+local period = tonumber(ARGV[5])
+local requested = tonumber(ARGV[6])
+local now = tonumber(ARGV[7])
+
+local state = redis.call('MGET', ARGV[1], ARGV[2])
+local current_tokens = tonumber(state[1]) or limit
+local last_refreshed = tonumber(state[2]) or 0
+
+local time_since_last_refreshed = math.max(0, now - last_refreshed)
+local periods_since_last_refreshed = math.floor(time_since_last_refreshed / period)
+
+local time_of_last_replenishment = now
+if last_refreshed > 0 then
+	time_of_last_replenishment = last_refreshed + (periods_since_last_refreshed * period)
+end
+
+current_tokens = math.min(limit, current_tokens + (periods_since_last_refreshed * rate))
+
+local allowed = 0
+local retry_after = 0
+if current_tokens >= requested then
+	allowed = 1
+	current_tokens = current_tokens - requested
+
+	local periods_until_full = math.ceil(limit / rate)
+	local ttl = math.ceil(periods_until_full * period)
+
+	redis.call('SET', ARGV[1], current_tokens, 'PXAT', ttl + now)
+	redis.call('SET', ARGV[2], time_of_last_replenishment, 'PXAT', ttl + now)
+else
+	retry_after = period - (now - time_of_last_replenishment)
+end
+
+return { current_tokens, retry_after, allowed }`
+
+var evalScript = radix.NewEvalScript(script)
 
 var tracer = otel.Tracer("redis.fixedCacheImpl")
 
 type fixedRateLimitCacheImpl struct {
-	client Client
-	// Optional Client for a dedicated cache of per second limits.
-	// If this client is nil, then the Cache will use the client for all
-	// limits regardless of unit. If this client is not nil, then it
-	// is used for limits that have a SECOND unit.
+	client                             Client
 	perSecondClient                    Client
 	stopCacheKeyIncrementWhenOverlimit bool
 	baseRateLimiter                    *limiter.BaseRateLimiter
 }
 
-func pipelineAppend(client Client, pipeline *Pipeline, key string, hitsAddend uint64, result *uint64, expirationSeconds int64) {
-	*pipeline = client.PipeAppend(*pipeline, result, "INCRBY", key, hitsAddend)
-	*pipeline = client.PipeAppend(*pipeline, nil, "EXPIRE", key, expirationSeconds)
+func pipelineAppendScript(client Client, pipeline *Pipeline, key string, hitsAddend, tokenLimit, tokensPerReplenishPeriod uint32, replenishPeriod, currentTime int64, result *[]int64) {
+	*pipeline = client.PipeScriptAppend(*pipeline, result, evalScript,
+		key,
+		fmt.Sprintf("%s:expires", key),
+		strconv.FormatInt(int64(tokensPerReplenishPeriod), 10),
+		strconv.FormatInt(int64(tokenLimit), 10),
+		strconv.FormatInt(replenishPeriod, 10),
+		strconv.FormatInt(int64(hitsAddend), 10),
+		strconv.FormatInt(currentTime, 10))
 }
 
-func pipelineAppendtoGet(client Client, pipeline *Pipeline, key string, result *uint64) {
+func pipelineAppendtoGet(client Client, pipeline *Pipeline, key string, result *uint32) {
 	*pipeline = client.PipeAppend(*pipeline, result, "GET", key)
-}
-
-func (this *fixedRateLimitCacheImpl) getHitsAddend(hitsAddend uint64, isCacheKeyOverlimit, isCacheKeyNearlimit,
-	isNearLimit bool,
-) uint64 {
-	// If stopCacheKeyIncrementWhenOverlimit is false, then we always increment the cache key.
-	if !this.stopCacheKeyIncrementWhenOverlimit {
-		return hitsAddend
-	}
-
-	// If stopCacheKeyIncrementWhenOverlimit is true, and one of the keys is over limit, then
-	// we do not increment the cache key.
-	if isCacheKeyOverlimit {
-		return 0
-	}
-
-	// If stopCacheKeyIncrementWhenOverlimit is true, and none of the keys are over limit, then
-	// to check if any of the keys are near limit. If none of the keys are near limit,
-	// then we increment the cache key.
-	if !isCacheKeyNearlimit {
-		return hitsAddend
-	}
-
-	// If stopCacheKeyIncrementWhenOverlimit is true, and some of the keys are near limit, then
-	// we only increment the cache key if the key is near limit.
-	if isNearLimit {
-		return hitsAddend
-	}
-
-	return 0
 }
 
 func (this *fixedRateLimitCacheImpl) DoLimit(
 	ctx context.Context,
 	request *pb.RateLimitRequest,
-	limits []*config.RateLimit,
-) []*pb.RateLimitResponse_DescriptorStatus {
-	logger.Debugf("starting cache lookup")
+	limits []*config.RateLimit) []*pb.RateLimitResponse_DescriptorStatus {
 
-	hitsAddends := utils.GetHitsAddends(request)
+	logger.Debug(ctx, "starting cache lookup")
 
-	// First build a list of all cache keys that we are actually going to hit.
+	hitsAddend := max(uint32(1), request.HitsAddend)
+
+	hitsAddends := make([]uint64, len(request.Descriptors))
+	for i := range hitsAddends {
+		hitsAddends[i] = uint64(hitsAddend)
+	}
 	cacheKeys := this.baseRateLimiter.GenerateCacheKeys(request, limits, hitsAddends)
 
 	isOverLimitWithLocalCache := make([]bool, len(request.Descriptors))
-	results := make([]uint64, len(request.Descriptors))
-	currentCount := make([]uint64, len(request.Descriptors))
+	results := make([][]int64, len(request.Descriptors))
+	for i := range results {
+		results[i] = make([]int64, 3)
+	}
+	currentCount := make([]uint32, len(request.Descriptors))
 	var pipeline, perSecondPipeline, pipelineToGet, perSecondPipelineToGet Pipeline
 
+	hitsAddendForRedis := hitsAddend
 	overlimitIndexes := make([]bool, len(request.Descriptors))
 	nearlimitIndexes := make([]bool, len(request.Descriptors))
 	isCacheKeyOverlimit := false
-	isCacheKeyNearlimit := false
 
-	// Check if any of the keys are already to the over limit in cache.
-	for i, cacheKey := range cacheKeys {
-		if cacheKey.Key == "" {
-			continue
-		}
-
-		// Check if key is over the limit in local cache.
-		if this.baseRateLimiter.IsOverLimitWithLocalCache(cacheKey.Key) {
-			if limits[i].ShadowMode {
-				logger.Debugf("Cache key %s would be rate limited but shadow mode is enabled on this rule", cacheKey.Key)
-			} else {
-				logger.Debugf("cache key is over the limit: %s", cacheKey.Key)
-			}
-			isCacheKeyOverlimit = true
-			isOverLimitWithLocalCache[i] = true
-			overlimitIndexes[i] = true
-		}
-	}
-
-	// If none of the keys are over limit in local cache and the stopCacheKeyIncrementWhenOverlimit is true,
-	// then we check if any of the keys are near limit in redis cache.
-	if this.stopCacheKeyIncrementWhenOverlimit && !isCacheKeyOverlimit {
+	if this.stopCacheKeyIncrementWhenOverlimit {
 		for i, cacheKey := range cacheKeys {
 			if cacheKey.Key == "" {
 				continue
 			}
 
-			if this.perSecondClient != nil && cacheKey.PerSecond {
-				if perSecondPipelineToGet == nil {
-					perSecondPipelineToGet = Pipeline{}
+			if this.baseRateLimiter.IsOverLimitWithLocalCache(cacheKey.Key) {
+				if limits[i].ShadowMode {
+					logger.Debug(ctx, fmt.Sprintf("Cache key %s would be rate limited but shadow mode is enabled on this rule", cacheKey.Key))
+				} else {
+					logger.Debug(ctx, fmt.Sprintf("cache key is over the limit: %s", cacheKey.Key))
 				}
-				pipelineAppendtoGet(this.perSecondClient, &perSecondPipelineToGet, cacheKey.Key, &currentCount[i])
+				isOverLimitWithLocalCache[i] = true
+				hitsAddendForRedis = 0
+				overlimitIndexes[i] = true
+				isCacheKeyOverlimit = true
+				continue
 			} else {
-				if pipelineToGet == nil {
-					pipelineToGet = Pipeline{}
+				if this.perSecondClient != nil && cacheKey.PerSecond {
+					if perSecondPipelineToGet == nil {
+						perSecondPipelineToGet = Pipeline{}
+					}
+					pipelineAppendtoGet(this.perSecondClient, &perSecondPipelineToGet, cacheKey.Key, &currentCount[i])
+				} else {
+					if pipelineToGet == nil {
+						pipelineToGet = Pipeline{}
+					}
+					pipelineAppendtoGet(this.client, &pipelineToGet, cacheKey.Key, &currentCount[i])
 				}
-				pipelineAppendtoGet(this.client, &pipelineToGet, cacheKey.Key, &currentCount[i])
 			}
 		}
 
-		if pipelineToGet != nil {
-			checkError(this.client.PipeDo(ctx, pipelineToGet))
-		}
-		if perSecondPipelineToGet != nil {
-			checkError(this.perSecondClient.PipeDo(ctx, perSecondPipelineToGet))
-		}
+		if len(cacheKeys) > 1 && !isCacheKeyOverlimit {
+			if pipelineToGet != nil {
+				checkError(this.client.PipeDo(ctx, pipelineToGet))
+			}
+			if perSecondPipelineToGet != nil {
+				checkError(this.perSecondClient.PipeDo(ctx, perSecondPipelineToGet))
+			}
 
+			for i, cacheKey := range cacheKeys {
+				if cacheKey.Key == "" {
+					continue
+				}
+				allowed := currentCount[i] >= hitsAddend
+				limitAfterIncrease := getLimitAfterIncrease(currentCount[i], limits[i].Limit.RequestsPerUnit, hitsAddend, allowed)
+				limitBeforeIncrease := limitAfterIncrease - hitsAddend
+
+				limitInfo := limiter.NewRateLimitInfo(limits[i], uint64(limitBeforeIncrease), uint64(limitAfterIncrease), 0, 0)
+
+				if this.baseRateLimiter.IsOverLimitThresholdReached(limitInfo) {
+					hitsAddendForRedis = 0
+					nearlimitIndexes[i] = true
+				}
+			}
+		}
+	} else {
 		for i, cacheKey := range cacheKeys {
 			if cacheKey.Key == "" {
 				continue
 			}
-			// Now fetch the pipeline.
-			limitBeforeIncrease := currentCount[i]
-			limitAfterIncrease := limitBeforeIncrease + hitsAddends[i]
 
-			limitInfo := limiter.NewRateLimitInfo(limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0)
-
-			if this.baseRateLimiter.IsOverLimitThresholdReached(limitInfo) {
-				nearlimitIndexes[i] = true
-				isCacheKeyNearlimit = true
+			if this.baseRateLimiter.IsOverLimitWithLocalCache(cacheKey.Key) {
+				if limits[i].ShadowMode {
+					logger.Debug(ctx, fmt.Sprintf("Cache key %s would be rate limited but shadow mode is enabled on this rule", cacheKey.Key))
+				} else {
+					logger.Debug(ctx, fmt.Sprintf("cache key is over the limit: %s", cacheKey.Key))
+				}
+				isOverLimitWithLocalCache[i] = true
+				overlimitIndexes[i] = true
+				continue
 			}
 		}
 	}
 
-	// Now, actually setup the pipeline to increase the usage of cache key, skipping empty cache keys.
 	for i, cacheKey := range cacheKeys {
 		if cacheKey.Key == "" || overlimitIndexes[i] {
 			continue
 		}
 
-		logger.Debugf("looking up cache key: %s", cacheKey.Key)
+		logger.Debug(ctx, fmt.Sprintf("looking up cache key: %s", cacheKey.Key))
 
-		expirationSeconds := utils.UnitToDivider(limits[i].Limit.Unit)
-		if this.baseRateLimiter.ExpirationJitterMaxSeconds > 0 {
-			expirationSeconds += this.baseRateLimiter.JitterRand.Int63n(this.baseRateLimiter.ExpirationJitterMaxSeconds)
+		replenishPeriod := time.Duration(utils.UnitToDivider(limits[i].Limit.Unit) * int64(time.Second)).Milliseconds()
+		if replenishPeriod == 1000 {
+			replenishPeriod = 775
 		}
 
-		// Use the perSecondConn if it is not nil and the cacheKey represents a per second Limit.
+		unixTime := this.baseRateLimiter.TimeSource.UnixNow() * 1000
+
 		if this.perSecondClient != nil && cacheKey.PerSecond {
 			if perSecondPipeline == nil {
 				perSecondPipeline = Pipeline{}
 			}
-			pipelineAppend(this.perSecondClient, &perSecondPipeline, cacheKey.Key, this.getHitsAddend(hitsAddends[i],
-				isCacheKeyOverlimit, isCacheKeyNearlimit, nearlimitIndexes[i]), &results[i], expirationSeconds)
+
+			hitsAddendToUse := hitsAddendForRedis
+			if !nearlimitIndexes[i] {
+				hitsAddendToUse = hitsAddend
+			}
+
+			pipelineAppendScript(this.perSecondClient, &perSecondPipeline, cacheKey.Key, hitsAddendToUse, limits[i].Limit.RequestsPerUnit, limits[i].Limit.RequestsPerUnit, replenishPeriod, unixTime, &results[i])
 		} else {
 			if pipeline == nil {
 				pipeline = Pipeline{}
 			}
-			pipelineAppend(this.client, &pipeline, cacheKey.Key, this.getHitsAddend(hitsAddends[i], isCacheKeyOverlimit,
-				isCacheKeyNearlimit, nearlimitIndexes[i]), &results[i], expirationSeconds)
+
+			hitsAddendToUse := hitsAddendForRedis
+			if !nearlimitIndexes[i] {
+				hitsAddendToUse = hitsAddend
+			}
+
+			pipelineAppendScript(this.client, &pipeline, cacheKey.Key, hitsAddendToUse, limits[i].Limit.RequestsPerUnit, limits[i].Limit.RequestsPerUnit, replenishPeriod, unixTime, &results[i])
 		}
 	}
 
-	// Generate trace
-	_, span := tracer.Start(
-		ctx, "Redis Pipeline Execution",
+	_, span := tracer.Start(ctx, "Redis Pipeline Execution",
 		trace.WithAttributes(
 			attribute.Int("pipeline length", len(pipeline)),
 			attribute.Int("perSecondPipeline length", len(perSecondPipeline)),
@@ -203,30 +251,54 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 		checkError(this.perSecondClient.PipeDo(ctx, perSecondPipeline))
 	}
 
-	// Now fetch the pipeline.
 	responseDescriptorStatuses := make([]*pb.RateLimitResponse_DescriptorStatus,
 		len(request.Descriptors))
 	for i, cacheKey := range cacheKeys {
+		limitAfterIncrease := uint32(0)
+		limitBeforeIncrease := uint32(0)
+		if limits[i] != nil {
+			currentTokens := uint32(results[i][0])
+			allowed := results[i][2] != 0
 
-		limitAfterIncrease := results[i]
-		limitBeforeIncrease := limitAfterIncrease - hitsAddends[i]
+			limitAfterIncrease = getLimitAfterIncrease(currentTokens, limits[i].Limit.RequestsPerUnit, hitsAddend, allowed)
+			limitBeforeIncrease = limitAfterIncrease - hitsAddend
 
-		limitInfo := limiter.NewRateLimitInfo(limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0)
+			logger.Debug(ctx, fmt.Sprintf("pipeline result cache key %s current: %d", cacheKey.Key, limitAfterIncrease), logger.WithValue("redisKey", cacheKey.Key), logger.WithValue("redisCurrentTokens", currentTokens),
+				logger.WithValue("redisAllowed", allowed), logger.WithValue("redisRetryAfter", results[i][1]), logger.WithValue("redisLimitAfterIncrease", limitAfterIncrease))
+		}
+
+		limitInfo := limiter.NewRateLimitInfo(limits[i], uint64(limitBeforeIncrease), uint64(limitAfterIncrease), 0, 0)
 
 		responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(cacheKey.Key,
-			limitInfo, isOverLimitWithLocalCache[i], hitsAddends[i])
+			limitInfo, isOverLimitWithLocalCache[i], uint64(hitsAddend))
 	}
 
 	return responseDescriptorStatuses
 }
 
-// Flush() is a no-op with redis since quota reads and updates happen synchronously.
+func getLimitAfterIncrease(currentTokens, requestsPerUnit, hitsAddend uint32, allowed bool) uint32 {
+	limitAfterIncrease := uint32(0)
+
+	if currentTokens == 0 {
+		limitAfterIncrease = requestsPerUnit
+		if !allowed {
+			limitAfterIncrease = limitAfterIncrease + hitsAddend
+		}
+	} else {
+		limitAfterIncrease = hitsAddend + requestsPerUnit - currentTokens
+		if allowed {
+			limitAfterIncrease = limitAfterIncrease - 1
+		}
+	}
+
+	return limitAfterIncrease
+}
+
 func (this *fixedRateLimitCacheImpl) Flush() {}
 
 func NewFixedRateLimitCacheImpl(client Client, perSecondClient Client, timeSource utils.TimeSource,
 	jitterRand *rand.Rand, expirationJitterMaxSeconds int64, localCache *freecache.Cache, nearLimitRatio float32, cacheKeyPrefix string, statsManager stats.Manager,
-	stopCacheKeyIncrementWhenOverlimit bool,
-) limiter.RateLimitCache {
+	stopCacheKeyIncrementWhenOverlimit bool) limiter.RateLimitCache {
 	return &fixedRateLimitCacheImpl{
 		client:                             client,
 		perSecondClient:                    perSecondClient,

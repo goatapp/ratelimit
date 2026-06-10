@@ -11,7 +11,7 @@ import (
 	stats "github.com/lyft/gostats"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/envoyproxy/ratelimit/src/redis"
+	"github.com/goatapp/ratelimit/src/redis"
 )
 
 func mustNewRedisServer() *miniredis.Miniredis {
@@ -129,8 +129,8 @@ func TestDoCmd(t *testing.T) {
 		client := mkRedisClient(redisSrv.Addr())
 		var res string
 
-		assert.Nil(t, client.DoCmd(nil, "SET", "foo", "bar"))
-		assert.Nil(t, client.DoCmd(&res, "GET", "foo"))
+		assert.Nil(t, client.DoCmd(context.Background(), nil, "SET", "foo", "bar"))
+		assert.Nil(t, client.DoCmd(context.Background(), &res, "GET", "foo"))
 		assert.Equal(t, "bar", res)
 	})
 
@@ -142,9 +142,9 @@ func TestDoCmd(t *testing.T) {
 		var res uint32
 		hits := uint32(1)
 
-		assert.Nil(t, client.DoCmd(&res, "INCRBY", "a", hits))
+		assert.Nil(t, client.DoCmd(context.Background(), &res, "INCRBY", "a", hits))
 		assert.Equal(t, hits, res)
-		assert.Nil(t, client.DoCmd(&res, "INCRBY", "a", hits))
+		assert.Nil(t, client.DoCmd(context.Background(), &res, "INCRBY", "a", hits))
 		assert.Equal(t, uint32(2), res)
 	})
 
@@ -152,10 +152,10 @@ func TestDoCmd(t *testing.T) {
 		redisSrv := mustNewRedisServer()
 		client := mkRedisClient(redisSrv.Addr())
 
-		assert.Nil(t, client.DoCmd(nil, "SET", "foo", "bar"))
+		assert.Nil(t, client.DoCmd(context.Background(), nil, "SET", "foo", "bar"))
 
 		redisSrv.Close()
-		assert.EqualError(t, client.DoCmd(nil, "GET", "foo"), "response returned from Conn: EOF")
+		assert.EqualError(t, client.DoCmd(context.Background(), nil, "GET", "foo"), "response returned from Conn: EOF")
 	})
 }
 
@@ -247,8 +247,8 @@ func TestPoolOnEmptyBehavior(t *testing.T) {
 
 		// Verify client works
 		var res string
-		assert.Nil(t, client.DoCmd(nil, "SET", "foo", "bar"))
-		assert.Nil(t, client.DoCmd(&res, "GET", "foo"))
+		assert.Nil(t, client.DoCmd(context.Background(), nil, "SET", "foo", "bar"))
+		assert.Nil(t, client.DoCmd(context.Background(), &res, "GET", "foo"))
 		assert.Equal(t, "bar", res)
 	})
 
@@ -286,8 +286,8 @@ func TestPoolOnEmptyBehavior(t *testing.T) {
 
 		// Verify client works
 		var res string
-		assert.Nil(t, client.DoCmd(nil, "SET", "test5", "value5"))
-		assert.Nil(t, client.DoCmd(&res, "GET", "test5"))
+		assert.Nil(t, client.DoCmd(context.Background(), nil, "SET", "test5", "value5"))
+		assert.Nil(t, client.DoCmd(context.Background(), &res, "GET", "test5"))
 		assert.Equal(t, "value5", res)
 	})
 
@@ -326,8 +326,8 @@ func TestPoolOnEmptyBehavior(t *testing.T) {
 
 		// Verify client works
 		var res string
-		assert.Nil(t, client.DoCmd(nil, "SET", "test6", "value6"))
-		assert.Nil(t, client.DoCmd(&res, "GET", "test6"))
+		assert.Nil(t, client.DoCmd(context.Background(), nil, "SET", "test6", "value6"))
+		assert.Nil(t, client.DoCmd(context.Background(), &res, "GET", "test6"))
 		assert.Equal(t, "value6", res)
 	})
 
@@ -344,8 +344,8 @@ func TestPoolOnEmptyBehavior(t *testing.T) {
 
 		// Verify client works
 		var res string
-		assert.Nil(t, client.DoCmd(nil, "SET", "test7", "value7"))
-		assert.Nil(t, client.DoCmd(&res, "GET", "test7"))
+		assert.Nil(t, client.DoCmd(context.Background(), nil, "SET", "test7", "value7"))
+		assert.Nil(t, client.DoCmd(context.Background(), &res, "GET", "test7"))
 		assert.Equal(t, "value7", res)
 	})
 }

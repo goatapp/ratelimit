@@ -16,28 +16,16 @@ func (e RedisError) Error() string {
 // Interface for a redis client.
 type Client interface {
 	// DoCmd is used to perform a redis command and retrieve a result.
-	//
-	// @param rcv supplies receiver for the result.
-	// @param cmd supplies the command to append.
-	// @param key supplies the key to append.
-	// @param args supplies the additional arguments.
-	DoCmd(rcv interface{}, cmd, key string, args ...interface{}) error
+	DoCmd(ctx context.Context, rcv interface{}, cmd string, args ...interface{}) error
 
 	// PipeAppend append a command onto the pipeline queue.
-	//
-	// @param pipeline supplies the queue for pending commands.
-	// @param rcv supplies receiver for the result.
-	// @param cmd supplies the command to append.
-	// @param key supplies the key to append.
-	// @param args supplies the additional arguments.
-	PipeAppend(pipeline Pipeline, rcv interface{}, cmd, key string, args ...interface{}) Pipeline
+	PipeAppend(pipeline Pipeline, rcv interface{}, cmd string, args ...interface{}) Pipeline
 
-	// PipeDo writes multiple commands to a Conn in
-	// a single write, then reads their responses in a single read. This reduces
-	// network delay into a single round-trip.
-	//
-	// @param ctx supplies the context for Redis I/O.
-	// @param pipeline supplies the queue for pending commands.
+	// PipeScriptAppend append a script command onto the pipeline queue.
+	PipeScriptAppend(pipeline Pipeline, rcv interface{}, script radix.EvalScript, args ...string) Pipeline
+
+	// PipeDo writes multiple commands to a Conn in a single write, then reads
+	// their responses in a single read.
 	PipeDo(ctx context.Context, pipeline Pipeline) error
 
 	// Once Close() is called all future method calls on the Client will return
@@ -46,13 +34,9 @@ type Client interface {
 
 	// NumActiveConns return number of active connections, used in testing.
 	NumActiveConns() int
+
+	// ImplicitPipeliningEnabled return true if implicit pipelining is enabled.
+	ImplicitPipeliningEnabled() bool
 }
 
-// PipelineAction represents a single action in the pipeline along with its key.
-// The key is used for grouping commands in cluster mode.
-type PipelineAction struct {
-	Action radix.Action
-	Key    string
-}
-
-type Pipeline []PipelineAction
+type Pipeline []radix.Action

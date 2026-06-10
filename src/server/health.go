@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,7 +11,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	logger "github.com/sirupsen/logrus"
+	logger "github.com/goatapp/ratelimit/src/log"
 
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -98,7 +99,7 @@ func (hc *HealthChecker) Fail(componentName string) error {
 		hc.grpc.SetServingStatus(hc.name, healthpb.HealthCheckResponse_NOT_SERVING)
 	} else {
 		errorText := fmt.Sprintf("Invalid component: %s", componentName)
-		logger.Error(errorText)
+		logger.Error(context.Background(), errorText)
 		return errors.New(errorText)
 	}
 	return nil
@@ -112,14 +113,14 @@ func (hc *HealthChecker) Ok(componentName string) error {
 		// Set component to be healthy
 		hc.healthMap[componentName] = true
 		allComponentsHealthy := areAllComponentsHealthy(hc.healthMap)
-		logger.Debugf("Health status of components: %v, all healthy: %t", hc.healthMap, allComponentsHealthy)
+		logger.Debug(context.Background(), fmt.Sprintf("Health status of components: %v, all healthy: %t", hc.healthMap, allComponentsHealthy))
 		if allComponentsHealthy {
 			atomic.StoreUint32(&hc.ok, 1)
 			hc.grpc.SetServingStatus(hc.name, healthpb.HealthCheckResponse_SERVING)
 		}
 	} else {
 		errorText := fmt.Sprintf("Invalid component: %s", componentName)
-		logger.Error(errorText)
+		logger.Error(context.Background(), errorText)
 		return errors.New(errorText)
 	}
 

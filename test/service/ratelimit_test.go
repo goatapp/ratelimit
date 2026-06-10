@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/envoyproxy/ratelimit/src/provider"
-	"github.com/envoyproxy/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/provider"
+	"github.com/goatapp/ratelimit/src/stats"
 
-	"github.com/envoyproxy/ratelimit/src/utils"
+	"github.com/goatapp/ratelimit/src/utils"
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
@@ -22,19 +22,20 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/envoyproxy/ratelimit/src/trace"
+	"github.com/goatapp/ratelimit/src/trace"
 
-	"github.com/envoyproxy/ratelimit/src/config"
-	"github.com/envoyproxy/ratelimit/src/redis"
-	server "github.com/envoyproxy/ratelimit/src/server"
-	ratelimit "github.com/envoyproxy/ratelimit/src/service"
-	"github.com/envoyproxy/ratelimit/test/common"
-	mock_config "github.com/envoyproxy/ratelimit/test/mocks/config"
-	mock_limiter "github.com/envoyproxy/ratelimit/test/mocks/limiter"
-	mock_provider "github.com/envoyproxy/ratelimit/test/mocks/provider"
-	mock_stats "github.com/envoyproxy/ratelimit/test/mocks/stats"
+	"github.com/goatapp/ratelimit/src/config"
+	"github.com/goatapp/ratelimit/src/redis"
+	server "github.com/goatapp/ratelimit/src/server"
+	ratelimit "github.com/goatapp/ratelimit/src/service"
+	"github.com/goatapp/ratelimit/test/common"
+	mock_config "github.com/goatapp/ratelimit/test/mocks/config"
+	mock_limiter "github.com/goatapp/ratelimit/test/mocks/limiter"
+	mock_provider "github.com/goatapp/ratelimit/test/mocks/provider"
+	mock_stats "github.com/goatapp/ratelimit/test/mocks/stats"
 )
 
 type barrier struct {
@@ -295,7 +296,7 @@ func TestRuleShadowMode(test *testing.T) {
 			{Code: pb.RateLimitResponse_OK, CurrentLimit: nil, LimitRemaining: 0},
 		})
 	response, err := service.ShouldRateLimit(context.Background(), request)
-	t.assert.Equal(
+	t.assert.True(proto.Equal(
 		&pb.RateLimitResponse{
 			OverallCode: pb.RateLimitResponse_OK,
 			Statuses: []*pb.RateLimitResponse_DescriptorStatus{
@@ -303,7 +304,7 @@ func TestRuleShadowMode(test *testing.T) {
 				{Code: pb.RateLimitResponse_OK, CurrentLimit: nil, LimitRemaining: 0},
 			},
 		},
-		response)
+		response))
 	t.assert.Nil(err)
 
 	t.assert.EqualValues(0, t.statStore.NewCounter("global_shadow_mode").Value())
@@ -334,7 +335,7 @@ func TestMixedRuleShadowMode(test *testing.T) {
 			{Code: testResults[1], CurrentLimit: nil, LimitRemaining: 0},
 		})
 	response, err := service.ShouldRateLimit(context.Background(), request)
-	t.assert.Equal(
+	t.assert.True(proto.Equal(
 		&pb.RateLimitResponse{
 			OverallCode: pb.RateLimitResponse_OVER_LIMIT,
 			Statuses: []*pb.RateLimitResponse_DescriptorStatus{
@@ -342,7 +343,7 @@ func TestMixedRuleShadowMode(test *testing.T) {
 				{Code: pb.RateLimitResponse_OVER_LIMIT, CurrentLimit: nil, LimitRemaining: 0},
 			},
 		},
-		response)
+		response))
 	t.assert.Nil(err)
 
 	t.assert.EqualValues(0, t.statStore.NewCounter("global_shadow_mode").Value())

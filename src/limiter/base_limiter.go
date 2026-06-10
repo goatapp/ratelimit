@@ -1,21 +1,23 @@
 package limiter
 
 import (
+	"fmt"
+	"context"
 	"math"
 	"math/rand"
 
 	"github.com/coocood/freecache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
-	logger "github.com/sirupsen/logrus"
+	logger "github.com/goatapp/ratelimit/src/log"
 
-	"github.com/envoyproxy/ratelimit/src/assert"
-	"github.com/envoyproxy/ratelimit/src/config"
-	"github.com/envoyproxy/ratelimit/src/stats"
-	"github.com/envoyproxy/ratelimit/src/utils"
+	"github.com/goatapp/ratelimit/src/assert"
+	"github.com/goatapp/ratelimit/src/config"
+	"github.com/goatapp/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/utils"
 )
 
 type BaseRateLimiter struct {
-	timeSource                 utils.TimeSource
+	TimeSource                 utils.TimeSource
 	JitterRand                 *rand.Rand
 	ExpirationJitterMaxSeconds int64
 	cacheKeyGenerator          CacheKeyGenerator
@@ -48,11 +50,10 @@ func (this *BaseRateLimiter) GenerateCacheKeys(request *pb.RateLimitRequest,
 ) []CacheKey {
 	assert.Assert(len(request.Descriptors) == len(limits))
 	cacheKeys := make([]CacheKey, len(request.Descriptors))
-	now := this.timeSource.UnixNow()
 	for i := 0; i < len(request.Descriptors); i++ {
 		// generateCacheKey() returns an empty string in the key if there is no limit
 		// so that we can keep the arrays all the same size.
-		cacheKeys[i] = this.cacheKeyGenerator.GenerateCacheKey(request.Domain, request.Descriptors[i], limits[i], now)
+		cacheKeys[i] = this.cacheKeyGenerator.GenerateCacheKey(request.Domain, request.Descriptors[i], limits[i])
 		// Increase statistics for limits hit by their respective requests.
 		if limits[i] != nil {
 			limits[i].Stats.TotalHits.Add(hitsAddends[i])
@@ -100,7 +101,7 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 		// The nearLimitThreshold is the number of requests that can be made before hitting the nearLimitRatio.
 		// We need to know it in both the OK and OVER_LIMIT scenarios.
 		limitInfo.nearLimitThreshold = uint64(math.Floor(float64(float32(limitInfo.overLimitThreshold) * this.nearLimitRatio)))
-		logger.Debugf("cache key: %s current: %d limit: %d", key, limitInfo.limitAfterIncrease, limitInfo.overLimitThreshold)
+		logger.Debug(context.Background(), fmt.Sprintf("cache key: %s current: %d limit: %d", key, limitInfo.limitAfterIncrease, limitInfo.overLimitThreshold))
 		if limitInfo.limitAfterIncrease > limitInfo.overLimitThreshold {
 			isOverLimit = true
 			responseDescriptorStatus = this.generateResponseDescriptorStatus(pb.RateLimitResponse_OVER_LIMIT,
@@ -118,7 +119,7 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 				// In the time of 1h1m, since the cache key becomes different (mongo_2h), it won't get ratelimited.
 				err := this.localCache.Set([]byte(key), []byte{}, int(utils.UnitToDivider(limitInfo.limit.Limit.Unit)))
 				if err != nil {
-					logger.Errorf("Failing to set local cache key: %s", key)
+					logger.Error(context.Background(), fmt.Sprintf("Failing to set local cache key: %s", key))
 				}
 			}
 		} else {
@@ -133,7 +134,7 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 
 	// If the limit is in ShadowMode, it should be always return OK
 	if isOverLimit && limitInfo.limit.ShadowMode {
-		logger.Debugf("Limit with key %s, is in shadow_mode", limitInfo.limit.FullKey)
+		logger.Debug(context.Background(), fmt.Sprintf("Limit with key %s, is in shadow_mode", limitInfo.limit.FullKey))
 		responseDescriptorStatus.Code = pb.RateLimitResponse_OK
 		// Increase shadow mode stats if the limit was actually over the limit
 		this.increaseShadowModeStats(isOverLimitWithLocalCache, limitInfo, hitsAddend)
@@ -146,7 +147,7 @@ func NewBaseRateLimit(timeSource utils.TimeSource, jitterRand *rand.Rand, expira
 	localCache *freecache.Cache, nearLimitRatio float32, cacheKeyPrefix string, statsManager stats.Manager,
 ) *BaseRateLimiter {
 	return &BaseRateLimiter{
-		timeSource:                 timeSource,
+		TimeSource:                 timeSource,
 		JitterRand:                 jitterRand,
 		ExpirationJitterMaxSeconds: expirationJitterMaxSeconds,
 		cacheKeyGenerator:          NewCacheKeyGenerator(cacheKeyPrefix),
@@ -205,7 +206,7 @@ func (this *BaseRateLimiter) generateResponseDescriptorStatus(responseCode pb.Ra
 			Code:               responseCode,
 			CurrentLimit:       limit,
 			LimitRemaining:     limitRemaining,
-			DurationUntilReset: utils.CalculateReset(&limit.Unit, this.timeSource),
+			DurationUntilReset: utils.CalculateReset(&limit.Unit, this.TimeSource),
 		}
 	} else {
 		return &pb.RateLimitResponse_DescriptorStatus{

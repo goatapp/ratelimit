@@ -1,11 +1,13 @@
 package stats
 
 import (
+	"fmt"
+	"context"
 	gostats "github.com/lyft/gostats"
-	logger "github.com/sirupsen/logrus"
+	logger "github.com/goatapp/ratelimit/src/log"
 
-	"github.com/envoyproxy/ratelimit/src/stats"
-	"github.com/envoyproxy/ratelimit/src/utils"
+	"github.com/goatapp/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/utils"
 )
 
 type MockStatManager struct {
@@ -35,7 +37,7 @@ func (m *MockStatManager) NewServiceStats() stats.ServiceStats {
 
 func (m *MockStatManager) NewStats(key string) stats.RateLimitStats {
 	ret := stats.RateLimitStats{}
-	logger.Debugf("outputing test gostats %s", key)
+	logger.Debug(context.Background(), fmt.Sprintf("outputing test gostats %s", key))
 	ret.Key = key
 	key = utils.SanitizeStatName(key)
 	ret.TotalHits = m.store.NewCounter(key + ".total_hits")
@@ -50,7 +52,7 @@ func (m *MockStatManager) NewStats(key string) stats.RateLimitStats {
 
 func (m *MockStatManager) NewDomainStats(key string) stats.DomainStats {
 	ret := stats.DomainStats{}
-	logger.Debugf("outputing test domain stats %s", key)
+	logger.Debug(context.Background(), fmt.Sprintf("outputing test domain stats %s", key))
 	ret.Key = key
 	ret.NotFound = m.store.NewCounter(key + ".domain_not_found")
 

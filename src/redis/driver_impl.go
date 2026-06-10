@@ -12,11 +12,10 @@ import (
 	stats "github.com/lyft/gostats"
 	"github.com/mediocregopher/radix/v4"
 	"github.com/mediocregopher/radix/v4/trace"
-	logger "github.com/sirupsen/logrus"
-	"golang.org/x/sync/errgroup"
+	logger "github.com/goatapp/ratelimit/src/log"
 
-	"github.com/envoyproxy/ratelimit/src/server"
-	"github.com/envoyproxy/ratelimit/src/utils"
+	"github.com/goatapp/ratelimit/src/server"
+	"github.com/goatapp/ratelimit/src/utils"
 )
 
 type poolStats struct {
@@ -42,11 +41,11 @@ func poolTrace(ps *poolStats, healthCheckActiveConnection bool, srv server.Serve
 				if healthCheckActiveConnection && srv != nil {
 					err := srv.HealthChecker().Ok(server.RedisHealthComponentName)
 					if err != nil {
-						logger.Errorf("Unable to update health status: %s", err)
+						logger.Error(context.Background(), fmt.Sprintf("Unable to update health status: %s", err))
 					}
 				}
 			} else {
-				logger.Errorf("creating redis connection error : %v", newConn.Err)
+				logger.Error(context.Background(), fmt.Sprintf("creating redis connection error : %v", newConn.Err))
 			}
 		},
 		ConnClosed: func(_ trace.PoolConnClosed) {
@@ -55,7 +54,7 @@ func poolTrace(ps *poolStats, healthCheckActiveConnection bool, srv server.Serve
 			if healthCheckActiveConnection && srv != nil && ps.connectionActive.Value() == 0 {
 				err := srv.HealthChecker().Fail(server.RedisHealthComponentName)
 				if err != nil {
-					logger.Errorf("Unable to update health status: %s", err)
+					logger.Error(context.Background(), fmt.Sprintf("Unable to update health status: %s", err))
 				}
 			}
 		},
@@ -72,6 +71,7 @@ type redisClient interface {
 type clientImpl struct {
 	client                     redisClient
 	stats                      poolStats
+	implicitPipelining         bool
 	isCluster                  bool
 	clusterPipelineParallelism int
 }
@@ -123,7 +123,7 @@ func createDialer(timeout time.Duration, useTls bool, tlsConfig *tls.Config, aut
 		}
 		dialer.NetDialer = &tlsNetDialer
 		if targetName != "" {
-			logger.Warnf("enabling TLS to redis %s", targetName)
+			logger.Warn(context.Background(), fmt.Sprintf("enabling TLS to redis %s", targetName))
 		}
 	}
 
@@ -131,11 +131,11 @@ func createDialer(timeout time.Duration, useTls bool, tlsConfig *tls.Config, aut
 	if auth != "" {
 		user, pass, found := strings.Cut(auth, ":")
 		if found {
-			logger.Warnf("enabling authentication to redis %s with user %s", targetName, user)
+			logger.Warn(context.Background(), fmt.Sprintf("enabling authentication to redis %s with user %s", targetName, user))
 			dialer.AuthUser = user
 			dialer.AuthPass = pass
 		} else {
-			logger.Warnf("enabling authentication to redis %s without user", targetName)
+			logger.Warn(context.Background(), fmt.Sprintf("enabling authentication to redis %s without user", targetName))
 			dialer.AuthPass = auth
 		}
 	}
@@ -161,7 +161,7 @@ func newClientImpl(ctx context.Context, scope stats.Scope, useTls bool, auth, re
 	clusterPipelineParallelism int,
 ) Client {
 	maskedUrl := utils.MaskCredentialsInUrl(url)
-	logger.Warnf("connecting to redis on %s with pool size %d", maskedUrl, poolSize)
+	logger.Warn(context.Background(), fmt.Sprintf("connecting to redis on %s with pool size %d", maskedUrl, poolSize))
 
 	// Create Dialer for connecting to Redis
 	dialer := createDialer(timeout, useTls, tlsConfig, auth, maskedUrl)
@@ -182,13 +182,13 @@ func newClientImpl(ctx context.Context, scope stats.Scope, useTls bool, auth, re
 
 	// pipelineLimit parameter is deprecated and ignored in radix v4.
 	if pipelineLimit > 0 {
-		logger.Warnf("REDIS_PIPELINE_LIMIT=%d is deprecated and has no effect in radix v4. Write buffering is controlled solely by REDIS_PIPELINE_WINDOW.", pipelineLimit)
+		logger.Warn(context.Background(), fmt.Sprintf("REDIS_PIPELINE_LIMIT=%d is deprecated and has no effect in radix v4. Write buffering is controlled solely by REDIS_PIPELINE_WINDOW.", pipelineLimit))
 	}
 
 	// Set WriteFlushInterval for cluster mode (grouped pipeline uses auto buffering)
 	if isCluster && pipelineWindow > 0 {
 		poolConfig.Dialer.WriteFlushInterval = pipelineWindow
-		logger.Debugf("Cluster mode: setting WriteFlushInterval to %v", pipelineWindow)
+		logger.Debug(context.Background(), fmt.Sprintf("Cluster mode: setting WriteFlushInterval to %v", pipelineWindow))
 	}
 
 	effectivePipelineParallelism := clusterPipelineParallelism
@@ -196,13 +196,13 @@ func newClientImpl(ctx context.Context, scope stats.Scope, useTls bool, auth, re
 		effectivePipelineParallelism = effectiveClusterPipelineParallelism(clusterPipelineParallelism, poolSize)
 		switch {
 		case clusterPipelineParallelism == 0:
-			logger.Warnf("Redis cluster pipeline parallelism: auto bounded to Redis pool size (%d concurrent groups)", effectivePipelineParallelism)
+			logger.Warn(context.Background(), fmt.Sprintf("Redis cluster pipeline parallelism: auto bounded to Redis pool size (%d concurrent groups)", effectivePipelineParallelism))
 		case clusterPipelineParallelism != effectivePipelineParallelism:
-			logger.Warnf("Redis cluster pipeline parallelism: configured value %d exceeds Redis pool size %d; bounded to %d concurrent groups", clusterPipelineParallelism, poolSize, effectivePipelineParallelism)
+			logger.Warn(context.Background(), fmt.Sprintf("Redis cluster pipeline parallelism: configured value %d exceeds Redis pool size %d; bounded to %d concurrent groups", clusterPipelineParallelism, poolSize, effectivePipelineParallelism))
 		case effectivePipelineParallelism == 1:
-			logger.Warnf("Redis cluster pipeline parallelism: disabled (serial legacy behavior)")
+			logger.Warn(context.Background(), "Redis cluster pipeline parallelism: disabled (serial legacy behavior)")
 		default:
-			logger.Warnf("Redis cluster pipeline parallelism: bounded to %d concurrent groups", effectivePipelineParallelism)
+			logger.Warn(context.Background(), fmt.Sprintf("Redis cluster pipeline parallelism: bounded to %d concurrent groups", effectivePipelineParallelism))
 		}
 	}
 
@@ -226,7 +226,7 @@ func newClientImpl(ctx context.Context, scope stats.Scope, useTls bool, auth, re
 	//     client.Do(ctx, cmd)
 	switch strings.ToUpper(poolOnEmptyBehavior) {
 	case "WAIT":
-		logger.Warnf("Redis pool %s: WAIT is default in radix v4 (blocks until connection available)", maskedUrl)
+		logger.Warn(context.Background(), fmt.Sprintf("Redis pool %s: WAIT is default in radix v4 (blocks until connection available)", maskedUrl))
 	case "CREATE":
 		// v3 CREATE created overflow connections when pool was full
 		// v4 does NOT support this - fail fast to prevent unexpected blocking behavior
@@ -236,7 +236,7 @@ func newClientImpl(ctx context.Context, scope stats.Scope, useTls bool, auth, re
 		// v4 does NOT support this - fail fast to prevent unexpected blocking behavior
 		panic(RedisError("REDIS_POOL_ON_EMPTY_BEHAVIOR=ERROR is not supported in radix v4. Pool will block instead of failing fast. Remove this setting or set to WAIT, and use context timeouts for fail-fast behavior."))
 	default:
-		logger.Warnf("Redis pool %s: using v4 default (fixed size=%d, blocks when full)", maskedUrl, poolSize)
+		logger.Warn(context.Background(), fmt.Sprintf("Redis pool %s: using v4 default (fixed size=%d, blocks when full)", maskedUrl, poolSize))
 	}
 
 	poolFunc := func(ctx context.Context, network, addr string) (radix.Client, error) {
@@ -266,7 +266,7 @@ func newClientImpl(ctx context.Context, scope stats.Scope, useTls bool, auth, re
 			panic(RedisError(fmt.Sprintf("timed out waiting for Redis connection to %s after %s: %v", maskedUrl, elapsed.Round(time.Millisecond), lastErr)))
 		}
 		d := b.Duration()
-		logger.Warnf("Retrying Redis connection to %s in %s (elapsed: %s): %v", maskedUrl, d, elapsed.Round(time.Millisecond), lastErr)
+		logger.Warn(context.Background(), fmt.Sprintf("Retrying Redis connection to %s in %s (elapsed: %s): %v", maskedUrl, d, elapsed.Round(time.Millisecond), lastErr))
 		select {
 		case <-time.After(d):
 		case <-ctx.Done():
@@ -279,11 +279,11 @@ func newClientImpl(ctx context.Context, scope stats.Scope, useTls bool, auth, re
 		var err error
 		switch strings.ToLower(redisType) {
 		case "single":
-			logger.Warnf("Creating single with urls %v", url)
+			logger.Warn(context.Background(), fmt.Sprintf("Creating single with urls %v", url))
 			client, err = poolFunc(ctx, redisSocketType, url)
 		case "cluster":
 			urls := strings.Split(url, ",")
-			logger.Warnf("Creating cluster with urls %v", urls)
+			logger.Warn(context.Background(), fmt.Sprintf("Creating cluster with urls %v", urls))
 			clusterConfig := radix.ClusterConfig{
 				PoolConfig: poolConfig,
 			}
@@ -323,25 +323,21 @@ func newClientImpl(ctx context.Context, scope stats.Scope, useTls bool, auth, re
 
 	if srv != nil {
 		if err := srv.HealthChecker().Ok(server.RedisHealthComponentName); err != nil {
-			logger.Errorf("Unable to update health status after Redis connection: %s", err)
+			logger.Error(context.Background(), fmt.Sprintf("Unable to update health status after Redis connection: %s", err))
 		}
 	}
 
 	return &clientImpl{
 		client:                     client,
 		stats:                      stats,
+		implicitPipelining:         pipelineWindow > 0 || isCluster,
 		isCluster:                  isCluster,
 		clusterPipelineParallelism: effectivePipelineParallelism,
 	}
 }
 
-func (c *clientImpl) DoCmd(rcv interface{}, cmd, key string, args ...interface{}) error {
-	ctx := context.Background()
-	// Combine key and args into a single slice
-	allArgs := make([]interface{}, 0, 1+len(args))
-	allArgs = append(allArgs, key)
-	allArgs = append(allArgs, args...)
-	return c.client.Do(ctx, radix.FlatCmd(rcv, cmd, allArgs...))
+func (c *clientImpl) DoCmd(ctx context.Context, rcv interface{}, cmd string, args ...interface{}) error {
+	return c.client.Do(ctx, radix.FlatCmd(rcv, cmd, args...))
 }
 
 func (c *clientImpl) Close() error {
@@ -352,96 +348,24 @@ func (c *clientImpl) NumActiveConns() int {
 	return int(c.stats.connectionActive.Value())
 }
 
-func (c *clientImpl) PipeAppend(pipeline Pipeline, rcv interface{}, cmd, key string, args ...interface{}) Pipeline {
-	// Combine key and args into a single slice
-	allArgs := make([]interface{}, 0, 1+len(args))
-	allArgs = append(allArgs, key)
-	allArgs = append(allArgs, args...)
-	return append(pipeline, PipelineAction{
-		Action: radix.FlatCmd(rcv, cmd, allArgs...),
-		Key:    key,
-	})
+func (c *clientImpl) PipeAppend(pipeline Pipeline, rcv interface{}, cmd string, args ...interface{}) Pipeline {
+	return append(pipeline, radix.FlatCmd(rcv, cmd, args...))
+}
+
+func (c *clientImpl) PipeScriptAppend(pipeline Pipeline, rcv interface{}, script radix.EvalScript, args ...string) Pipeline {
+	return append(pipeline, script.FlatCmd(rcv, nil, args))
+}
+
+func (c *clientImpl) ImplicitPipeliningEnabled() bool {
+	return c.implicitPipelining
 }
 
 func (c *clientImpl) PipeDo(ctx context.Context, pipeline Pipeline) error {
-	if c.isCluster {
-		// Cluster mode: group commands by key and execute each group as a pipeline.
-		// This ensures INCRBY + EXPIRE for the same key are pipelined together (same slot),
-		// reducing round-trips from 2 to 1 per key.
-		return c.executeGroupedPipeline(ctx, pipeline)
-	}
-
-	// Single/Sentinel mode: batch all commands in a single pipeline.
-	p := radix.NewPipeline()
-	for _, pipelineAction := range pipeline {
-		p.Append(pipelineAction.Action)
-	}
-	return c.client.Do(ctx, p)
-}
-
-// executeGroupedPipeline routes a pipeline of Redis actions in cluster mode
-// via a three-tier dispatch:
-//
-//  1. Single-action fast path (len==1): skip grouping entirely.
-//  2. Serial compatibility path: clusterPipelineParallelism == 1 preserves
-//     the pre-parallelization behavior.
-//  3. General path: group actions by key (same-key commands like INCRBY +
-//     EXPIRE are still pipelined together) and execute groups concurrently
-//     via errgroup with clusterPipelineParallelism as the max concurrent group
-//     count.
-func (c *clientImpl) executeGroupedPipeline(ctx context.Context, pipeline Pipeline) error {
-	// Tier 1: single action — skip grouping, skip map alloc.
-	if len(pipeline) == 1 {
-		return c.client.Do(ctx, pipeline[0].Action)
-	}
-
-	// Tier 2: group by key, preserving first-occurrence order.
-	groups := make([][]radix.Action, 0, len(pipeline))
-	keyToIndex := make(map[string]int, len(pipeline))
-
-	for _, pa := range pipeline {
-		if idx, exists := keyToIndex[pa.Key]; exists {
-			groups[idx] = append(groups[idx], pa.Action)
-		} else {
-			keyToIndex[pa.Key] = len(groups)
-			groups = append(groups, []radix.Action{pa.Action})
-		}
-	}
-
-	if c.clusterPipelineParallelism == 1 {
-		return c.doPipelineGroupsSerial(ctx, groups)
-	}
-
-	// Execute groups concurrently.
-	eg, egCtx := errgroup.WithContext(ctx)
-	if c.clusterPipelineParallelism > 1 {
-		eg.SetLimit(c.clusterPipelineParallelism)
-	}
-	for _, actions := range groups {
-		actions := actions
-		eg.Go(func() error {
-			return c.doPipelineGroup(egCtx, actions)
-		})
-	}
-	return eg.Wait()
-}
-
-func (c *clientImpl) doPipelineGroupsSerial(ctx context.Context, groups [][]radix.Action) error {
-	for _, actions := range groups {
-		if err := c.doPipelineGroup(ctx, actions); err != nil {
+	for _, action := range pipeline {
+		if err := c.client.Do(ctx, action); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (c *clientImpl) doPipelineGroup(ctx context.Context, actions []radix.Action) error {
-	if len(actions) == 1 {
-		return c.client.Do(ctx, actions[0])
-	}
-	p := radix.NewPipeline()
-	for _, action := range actions {
-		p.Append(action)
-	}
-	return c.client.Do(ctx, p)
-}

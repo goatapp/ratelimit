@@ -8,8 +8,8 @@ import (
 	gostatsMock "github.com/lyft/gostats/mock"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/envoyproxy/ratelimit/src/settings"
-	"github.com/envoyproxy/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/settings"
+	"github.com/goatapp/ratelimit/src/stats"
 )
 
 func TestEscapingInvalidChartersInMetricName(t *testing.T) {
@@ -50,7 +50,7 @@ func TestEscapingInvalidChartersInMetricName(t *testing.T) {
 
 			stats.TotalHits.Inc()
 			statsManager.GetStatsStore().Flush()
-			mockSink.AssertCounterExists(t, fmt.Sprintf("ratelimit.service.rate_limit.%s.total_hits", tt.want))
+			mockSink.AssertCounterExists(t, fmt.Sprintf("app.ratelimit.local.service.rate_limit.%s.total_hits", tt.want))
 		})
 	}
 }

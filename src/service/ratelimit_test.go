@@ -11,7 +11,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/envoyproxy/ratelimit/src/config"
+	"github.com/goatapp/ratelimit/src/config"
 )
 
 func TestRatelimitToMetadata(t *testing.T) {

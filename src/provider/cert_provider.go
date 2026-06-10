@@ -1,15 +1,17 @@
 package provider
 
 import (
+	"fmt"
+	"context"
 	"crypto/tls"
 	"path/filepath"
 	"sync"
 
 	"github.com/lyft/goruntime/loader"
 	gostats "github.com/lyft/gostats"
-	logger "github.com/sirupsen/logrus"
+	logger "github.com/goatapp/ratelimit/src/log"
 
-	"github.com/envoyproxy/ratelimit/src/settings"
+	"github.com/goatapp/ratelimit/src/settings"
 )
 
 // CertProvider will watch certDirectory for changes via goruntime/loader and reload the cert and key files
@@ -39,9 +41,9 @@ func (p *CertProvider) watch() {
 
 	go func() {
 		for {
-			logger.Debugf("CertProvider: waiting for runtime update")
+			logger.Debug(context.Background(), "CertProvider: waiting for runtime update")
 			<-p.runtimeUpdateEvent
-			logger.Debugf("CertProvider: got runtime update and reloading config")
+			logger.Debug(context.Background(), "CertProvider: got runtime update and reloading config")
 			p.reloadCert()
 		}
 	}()
@@ -51,17 +53,17 @@ func (p *CertProvider) watch() {
 func (p *CertProvider) reloadCert() {
 	tlsKeyPair, err := tls.LoadX509KeyPair(p.certFile, p.keyFile)
 	if err != nil {
-		logger.Errorf("CertProvider failed to load TLS key pair (%s, %s): %v", p.certFile, p.keyFile, err)
+		logger.Error(context.Background(), fmt.Sprintf("CertProvider failed to load TLS key pair (%s, %s): %v", p.certFile, p.keyFile, err))
 		// panic in case there is no cert already loaded as this would mean starting up without TLS
 		if p.cert == nil {
-			logger.Fatalf("CertProvider failed to load any certificate, exiting.")
+			logger.Fatal(context.Background(), "CertProvider failed to load any certificate, exiting.")
 		}
 		return // keep the old cert if we have one
 	}
 	p.certLock.Lock()
 	defer p.certLock.Unlock()
 	p.cert = &tlsKeyPair
-	logger.Infof("CertProvider reloaded cert from (%s, %s)", p.certFile, p.keyFile)
+	logger.Info(context.Background(), fmt.Sprintf("CertProvider reloaded cert from (%s, %s)", p.certFile, p.keyFile))
 }
 
 // setupRuntime sets up the goruntime loader to watch the certDirectory
@@ -81,7 +83,7 @@ func (p *CertProvider) setupRuntime() {
 		&loader.DirectoryRefresher{},
 		loader.IgnoreDotFiles)
 	if err != nil {
-		logger.Fatalf("Failed to set up goruntime loader: %v", err)
+		logger.Fatal(context.Background(), fmt.Sprintf("Failed to set up goruntime loader: %v", err))
 	}
 }
 
@@ -90,7 +92,7 @@ func (p *CertProvider) setupRuntime() {
 func NewCertProvider(settings settings.Settings, rootStore gostats.Store, certFile, keyFile string) *CertProvider {
 	certDirectory := filepath.Dir(certFile)
 	if certDirectory != filepath.Dir(keyFile) {
-		logger.Fatalf("certFile and keyFile must be in the same directory")
+		logger.Fatal(context.Background(), "certFile and keyFile must be in the same directory")
 	}
 	p := &CertProvider{
 		settings:           settings,

@@ -1,16 +1,17 @@
 package provider
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 
 	"github.com/lyft/goruntime/loader"
 	gostats "github.com/lyft/gostats"
-	logger "github.com/sirupsen/logrus"
+	logger "github.com/goatapp/ratelimit/src/log"
 
-	"github.com/envoyproxy/ratelimit/src/config"
-	"github.com/envoyproxy/ratelimit/src/settings"
-	"github.com/envoyproxy/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/config"
+	"github.com/goatapp/ratelimit/src/settings"
+	"github.com/goatapp/ratelimit/src/stats"
 )
 
 type FileProvider struct {
@@ -37,9 +38,9 @@ func (p *FileProvider) watch() {
 		p.sendEvent()
 		// No exit right now.
 		for {
-			logger.Debugf("waiting for runtime update")
+			logger.Debug(context.Background(), "waiting for runtime update")
 			<-p.runtimeUpdateEvent
-			logger.Debugf("got runtime update and reloading config")
+			logger.Debug(context.Background(), "got runtime update and reloading config")
 			p.sendEvent()
 		}
 	}()

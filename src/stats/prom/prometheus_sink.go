@@ -1,7 +1,9 @@
 package prom
 
 import (
+	"context"
 	_ "embed"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -13,7 +15,7 @@ import (
 	"github.com/prometheus/statsd_exporter/pkg/event"
 	"github.com/prometheus/statsd_exporter/pkg/exporter"
 	"github.com/prometheus/statsd_exporter/pkg/mapper"
-	"github.com/sirupsen/logrus"
+	logger "github.com/goatapp/ratelimit/src/log"
 )
 
 var (
@@ -129,7 +131,7 @@ func NewPrometheusSink(opts ...prometheusSinkOption) gostats.Sink {
 	}
 	http.Handle(sink.config.path, promhttp.Handler())
 	go func() {
-		logrus.Infof("Starting prometheus sink on %s%s", sink.config.addr, sink.config.path)
+		logger.Info(context.Background(), fmt.Sprintf("Starting prometheus sink on %s%s", sink.config.addr, sink.config.path))
 		_ = http.ListenAndServe(sink.config.addr, nil)
 	}()
 	if sink.config.mapperYamlPath != "" {
@@ -152,7 +154,7 @@ func NewPrometheusSink(opts ...prometheusSinkOption) gostats.Sink {
 }
 
 func (s *prometheusSink) FlushCounter(name string, value uint64) {
-	logrus.Debugf("FlushCounter: %s %d", name, value)
+	logger.Debug(context.Background(), fmt.Sprintf("FlushCounter: %s %d", name, value))
 	s.events <- event.Events{&event.CounterEvent{
 		CMetricName: name,
 		CValue:      float64(value),
@@ -161,7 +163,7 @@ func (s *prometheusSink) FlushCounter(name string, value uint64) {
 }
 
 func (s *prometheusSink) FlushGauge(name string, value uint64) {
-	logrus.Debugf("FlushGauge: %s %d", name, value)
+	logger.Debug(context.Background(), fmt.Sprintf("FlushGauge: %s %d", name, value))
 	s.events <- event.Events{&event.GaugeEvent{
 		GMetricName: name,
 		GValue:      float64(value),
@@ -170,7 +172,7 @@ func (s *prometheusSink) FlushGauge(name string, value uint64) {
 }
 
 func (s *prometheusSink) FlushTimer(name string, value float64) {
-	logrus.Debugf("FlushTimer: %s %v", name, value)
+	logger.Debug(context.Background(), fmt.Sprintf("FlushTimer: %s %v", name, value))
 	s.events <- event.Events{&event.ObserverEvent{
 		OMetricName: name,
 		OValue:      value,

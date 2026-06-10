@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
-	mockstats "github.com/envoyproxy/ratelimit/test/mocks/stats"
+	mockstats "github.com/goatapp/ratelimit/test/mocks/stats"
 
 	"github.com/coocood/freecache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
@@ -12,10 +12,10 @@ import (
 	stats "github.com/lyft/gostats"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/envoyproxy/ratelimit/src/config"
-	"github.com/envoyproxy/ratelimit/src/limiter"
-	"github.com/envoyproxy/ratelimit/test/common"
-	mock_utils "github.com/envoyproxy/ratelimit/test/mocks/utils"
+	"github.com/goatapp/ratelimit/src/config"
+	"github.com/goatapp/ratelimit/src/limiter"
+	"github.com/goatapp/ratelimit/test/common"
+	mock_utils "github.com/goatapp/ratelimit/test/mocks/utils"
 )
 
 func TestGenerateCacheKeys(t *testing.T) {
@@ -26,14 +26,13 @@ func TestGenerateCacheKeys(t *testing.T) {
 	jitterSource := mock_utils.NewMockJitterRandSource(controller)
 	statsStore := stats.NewStore(stats.NewNullSink(), false)
 	sm := mockstats.NewMockStatManager(statsStore)
-	timeSource.EXPECT().UnixNow().Return(int64(1234))
 	baseRateLimit := limiter.NewBaseRateLimit(timeSource, rand.New(jitterSource), 3600, nil, 0.8, "", sm)
 	request := common.NewRateLimitRequest("domain", [][][2]string{{{"key", "value"}}}, 1)
 	limits := []*config.RateLimit{config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key_value"), false, false, false, "", nil, false)}
 	assert.Equal(uint64(0), limits[0].Stats.TotalHits.Value())
 	cacheKeys := baseRateLimit.GenerateCacheKeys(request, limits, []uint64{1})
 	assert.Equal(1, len(cacheKeys))
-	assert.Equal("domain_key_value_1234", cacheKeys[0].Key)
+	assert.Equal("domain_key_value", cacheKeys[0].Key)
 	assert.Equal(uint64(1), limits[0].Stats.TotalHits.Value())
 }
 
@@ -45,14 +44,13 @@ func TestGenerateCacheKeysPrefix(t *testing.T) {
 	jitterSource := mock_utils.NewMockJitterRandSource(controller)
 	statsStore := stats.NewStore(stats.NewNullSink(), false)
 	sm := mockstats.NewMockStatManager(statsStore)
-	timeSource.EXPECT().UnixNow().Return(int64(1234))
 	baseRateLimit := limiter.NewBaseRateLimit(timeSource, rand.New(jitterSource), 3600, nil, 0.8, "prefix:", sm)
 	request := common.NewRateLimitRequest("domain", [][][2]string{{{"key", "value"}}}, 1)
 	limits := []*config.RateLimit{config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key_value"), false, false, false, "", nil, false)}
 	assert.Equal(uint64(0), limits[0].Stats.TotalHits.Value())
 	cacheKeys := baseRateLimit.GenerateCacheKeys(request, limits, []uint64{1})
 	assert.Equal(1, len(cacheKeys))
-	assert.Equal("prefix:domain_key_value_1234", cacheKeys[0].Key)
+	assert.Equal("prefix:domain_key_value", cacheKeys[0].Key)
 	assert.Equal(uint64(1), limits[0].Stats.TotalHits.Value())
 }
 
@@ -64,7 +62,6 @@ func TestGenerateCacheKeysWithShareThreshold(t *testing.T) {
 	jitterSource := mock_utils.NewMockJitterRandSource(controller)
 	statsStore := stats.NewStore(stats.NewNullSink(), false)
 	sm := mockstats.NewMockStatManager(statsStore)
-	timeSource.EXPECT().UnixNow().Return(int64(1234)).AnyTimes()
 	baseRateLimit := limiter.NewBaseRateLimit(timeSource, rand.New(jitterSource), 3600, nil, 0.8, "", sm)
 
 	// Test 1: Simple case - different values with same wildcard prefix generate same cache key
@@ -75,14 +72,14 @@ func TestGenerateCacheKeysWithShareThreshold(t *testing.T) {
 	limits1 := []*config.RateLimit{limit}
 	cacheKeys1 := baseRateLimit.GenerateCacheKeys(request1, limits1, []uint64{1})
 	assert.Equal(1, len(cacheKeys1))
-	assert.Equal("domain_files_files/*_1234", cacheKeys1[0].Key)
+	assert.Equal("domain_files_files/*", cacheKeys1[0].Key)
 
 	request2 := common.NewRateLimitRequest("domain", [][][2]string{{{"files", "files/b.csv"}}}, 1)
 	limits2 := []*config.RateLimit{limit}
 	cacheKeys2 := baseRateLimit.GenerateCacheKeys(request2, limits2, []uint64{1})
 	assert.Equal(1, len(cacheKeys2))
 	// Should generate the same cache key as the first request
-	assert.Equal("domain_files_files/*_1234", cacheKeys2[0].Key)
+	assert.Equal("domain_files_files/*", cacheKeys2[0].Key)
 	assert.Equal(cacheKeys1[0].Key, cacheKeys2[0].Key)
 
 	// Test 2: Multiple different values all generate the same cache key
@@ -91,7 +88,7 @@ func TestGenerateCacheKeysWithShareThreshold(t *testing.T) {
 		request := common.NewRateLimitRequest("domain", [][][2]string{{{"files", value}}}, 1)
 		cacheKeys := baseRateLimit.GenerateCacheKeys(request, limits1, []uint64{1})
 		assert.Equal(1, len(cacheKeys))
-		assert.Equal("domain_files_files/*_1234", cacheKeys[0].Key, "Value %s should generate same cache key", value)
+		assert.Equal("domain_files_files/*", cacheKeys[0].Key, "Value %s should generate same cache key", value)
 	}
 
 	// Test 3: Nested descriptors with share_threshold at second level
@@ -104,7 +101,7 @@ func TestGenerateCacheKeysWithShareThreshold(t *testing.T) {
 	limits3a := []*config.RateLimit{limitNested}
 	cacheKeys3a := baseRateLimit.GenerateCacheKeys(request3a, limits3a, []uint64{1})
 	assert.Equal(1, len(cacheKeys3a))
-	assert.Equal("domain_parent_value1_files_nested/*_1234", cacheKeys3a[0].Key)
+	assert.Equal("domain_parent_value1_files_nested/*", cacheKeys3a[0].Key)
 
 	request3b := common.NewRateLimitRequest("domain", [][][2]string{
 		{{"parent", "value1"}, {"files", "nested/file2.csv"}},
@@ -112,7 +109,7 @@ func TestGenerateCacheKeysWithShareThreshold(t *testing.T) {
 	cacheKeys3b := baseRateLimit.GenerateCacheKeys(request3b, limits3a, []uint64{1})
 	assert.Equal(1, len(cacheKeys3b))
 	// Should generate the same cache key despite different file values
-	assert.Equal("domain_parent_value1_files_nested/*_1234", cacheKeys3b[0].Key)
+	assert.Equal("domain_parent_value1_files_nested/*", cacheKeys3b[0].Key)
 	assert.Equal(cacheKeys3a[0].Key, cacheKeys3b[0].Key)
 
 	// Test 4: Multiple entries with share_threshold at different positions
@@ -125,7 +122,7 @@ func TestGenerateCacheKeysWithShareThreshold(t *testing.T) {
 	limits4a := []*config.RateLimit{limitMulti}
 	cacheKeys4a := baseRateLimit.GenerateCacheKeys(request4a, limits4a, []uint64{1})
 	assert.Equal(1, len(cacheKeys4a))
-	assert.Equal("domain_files_top/*_files_nested/*_1234", cacheKeys4a[0].Key)
+	assert.Equal("domain_files_top/*_files_nested/*", cacheKeys4a[0].Key)
 
 	request4b := common.NewRateLimitRequest("domain", [][][2]string{
 		{{"files", "top/file2.pdf"}, {"files", "nested/sub2.csv"}},
@@ -133,7 +130,7 @@ func TestGenerateCacheKeysWithShareThreshold(t *testing.T) {
 	cacheKeys4b := baseRateLimit.GenerateCacheKeys(request4b, limits4a, []uint64{1})
 	assert.Equal(1, len(cacheKeys4b))
 	// Should generate the same cache key despite different values
-	assert.Equal("domain_files_top/*_files_nested/*_1234", cacheKeys4b[0].Key)
+	assert.Equal("domain_files_top/*_files_nested/*", cacheKeys4b[0].Key)
 	assert.Equal(cacheKeys4a[0].Key, cacheKeys4b[0].Key)
 }
 
@@ -156,11 +153,11 @@ func TestNoOverLimitWithLocalCache(t *testing.T) {
 	sm := mockstats.NewMockStatManager(stats.NewStore(stats.NewNullSink(), false))
 	baseRateLimit := limiter.NewBaseRateLimit(nil, nil, 3600, nil, 0.8, "", sm)
 	// Returns false, as local cache is nil.
-	assert.Equal(false, baseRateLimit.IsOverLimitWithLocalCache("domain_key_value_1234"))
+	assert.Equal(false, baseRateLimit.IsOverLimitWithLocalCache("domain_key_value"))
 	localCache := freecache.NewCache(100)
 	baseRateLimitWithLocalCache := limiter.NewBaseRateLimit(nil, nil, 3600, localCache, 0.8, "", sm)
 	// Returns false, as local cache does not contain value for cache key.
-	assert.Equal(false, baseRateLimitWithLocalCache.IsOverLimitWithLocalCache("domain_key_value_1234"))
+	assert.Equal(false, baseRateLimitWithLocalCache.IsOverLimitWithLocalCache("domain_key_value"))
 }
 
 func TestGetResponseStatusEmptyKey(t *testing.T) {

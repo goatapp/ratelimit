@@ -6,12 +6,12 @@ import (
 
 	pb_struct "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
-	logger "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 	"google.golang.org/protobuf/types/known/structpb"
 	"gopkg.in/yaml.v2"
 
-	"github.com/envoyproxy/ratelimit/src/stats"
+	logger "github.com/goatapp/ratelimit/src/log"
+	"github.com/goatapp/ratelimit/src/stats"
 )
 
 type yamlReplaces struct {
@@ -335,8 +335,8 @@ func (this *rateLimitDescriptor) loadDescriptors(config RateLimitConfigToLoad, p
 			panic(newRateLimitConfigError(config.Name, fmt.Sprintf("error parsing metadata: %s", err.Error())))
 		}
 
-		logger.Debugf(
-			"loading descriptor: key=%s%s", newParentKey, rateLimitDebugString)
+		logger.Debug(context.Background(),
+			fmt.Sprintf("loading descriptor: key=%s%s", newParentKey, rateLimitDebugString))
 		newDescriptor := &rateLimitDescriptor{
 			descriptors:     map[string]*rateLimitDescriptor{},
 			limit:           rateLimit,
@@ -358,12 +358,12 @@ func validateYamlKeys(fileName string, config_map map[interface{}]interface{}) {
 	for k, v := range config_map {
 		if _, ok := k.(string); !ok {
 			errorText := fmt.Sprintf("config error, key is not of type string: %v", k)
-			logger.Debug(errorText)
+			logger.Debug(context.Background(), errorText)
 			panic(newRateLimitConfigError(fileName, errorText))
 		}
 		if _, ok := validKeys[k.(string)]; !ok {
 			errorText := fmt.Sprintf("config error, unknown key '%s'", k)
-			logger.Debug(errorText)
+			logger.Debug(context.Background(), errorText)
 			panic(newRateLimitConfigError(fileName, errorText))
 		}
 		if k.(string) == "metadata" {
@@ -376,7 +376,7 @@ func validateYamlKeys(fileName string, config_map map[interface{}]interface{}) {
 			for _, e := range v {
 				if _, ok := e.(map[interface{}]interface{}); !ok {
 					errorText := fmt.Sprintf("config error, yaml file contains list of type other than map: %v", e)
-					logger.Debug(errorText)
+					logger.Debug(context.Background(), errorText)
 					panic(newRateLimitConfigError(fileName, errorText))
 				}
 				element := e.(map[interface{}]interface{})
@@ -395,7 +395,7 @@ func validateYamlKeys(fileName string, config_map map[interface{}]interface{}) {
 		case nil:
 		default:
 			errorText := "error checking config"
-			logger.Debug(errorText)
+			logger.Debug(context.Background(), errorText)
 			panic(newRateLimitConfigError(fileName, errorText))
 		}
 	}
@@ -416,12 +416,12 @@ func (this *rateLimitConfigImpl) loadConfig(config RateLimitConfigToLoad) {
 				config.Name, fmt.Sprintf("duplicate domain '%s' in config file", root.Domain)))
 		}
 
-		logger.Debugf("patching domain: %s", root.Domain)
+		logger.Debug(context.Background(), fmt.Sprintf("patching domain: %s", root.Domain))
 		this.domains[root.Domain].loadDescriptors(config, root.Domain+".", root.Descriptors, this.statsManager)
 		return
 	}
 
-	logger.Debugf("loading domain: %s", root.Domain)
+	logger.Debug(context.Background(), fmt.Sprintf("loading domain: %s", root.Domain))
 	newDomain := &rateLimitDomain{rateLimitDescriptor{
 		descriptors:     map[string]*rateLimitDescriptor{},
 		limit:           nil,
@@ -446,11 +446,11 @@ func (this *rateLimitConfigImpl) Dump() string {
 func (this *rateLimitConfigImpl) GetLimit(
 	ctx context.Context, domain string, descriptor *pb_struct.RateLimitDescriptor,
 ) *RateLimit {
-	logger.Debugf("starting get limit lookup")
+	logger.Debug(context.Background(), "starting get limit lookup")
 	var rateLimit *RateLimit = nil
 	value := this.domains[domain]
 	if value == nil {
-		logger.Debugf("unknown domain '%s'", domain)
+		logger.Debug(context.Background(), fmt.Sprintf("unknown domain '%s'", domain))
 		domainStats := this.statsManager.NewDomainStats(domain)
 		domainStats.NotFound.Inc()
 		return rateLimit
@@ -497,7 +497,7 @@ func (this *rateLimitConfigImpl) GetLimit(
 		detailedMetricFullKey.WriteString(".")
 		detailedMetricFullKey.WriteString(finalKey)
 
-		logger.Debugf("looking up key: %s", finalKey)
+		logger.Debug(context.Background(), fmt.Sprintf("looking up key: %s", finalKey))
 		nextDescriptor := descriptorsMap[finalKey]
 		var matchedWildcardKey string
 
@@ -514,7 +514,7 @@ func (this *rateLimitConfigImpl) GetLimit(
 		matchedUsingValue := nextDescriptor != nil
 		if nextDescriptor == nil {
 			finalKey = entry.Key
-			logger.Debugf("looking up key: %s", finalKey)
+			logger.Debug(context.Background(), fmt.Sprintf("looking up key: %s", finalKey))
 			nextDescriptor = descriptorsMap[finalKey]
 			matchedUsingValue = false
 		}
@@ -528,7 +528,7 @@ func (this *rateLimitConfigImpl) GetLimit(
 
 			wildcardValue := strings.TrimPrefix(nextDescriptor.wildcardPattern, entry.Key+"_")
 			shareThresholdPatterns[i] = wildcardValue
-			logger.Debugf("tracking share_threshold for entry index %d (key %s), wildcard pattern %s", i, entry.Key, wildcardValue)
+			logger.Debug(context.Background(), fmt.Sprintf("tracking share_threshold for entry index %d (key %s), wildcard pattern %s", i, entry.Key, wildcardValue))
 		}
 
 		// Build value_to_metric metrics path for this level
@@ -572,7 +572,7 @@ func (this *rateLimitConfigImpl) GetLimit(
 		}
 
 		if nextDescriptor != nil && nextDescriptor.limit != nil {
-			logger.Debugf("found rate limit: %s", finalKey)
+			logger.Debug(context.Background(), fmt.Sprintf("found rate limit: %s", finalKey))
 
 			if i == len(descriptor.Entries)-1 {
 				// Create a copy of the rate limit to avoid modifying the shared object
@@ -600,15 +600,15 @@ func (this *rateLimitConfigImpl) GetLimit(
 
 				for idx, pattern := range shareThresholdPatterns {
 					rateLimit.ShareThresholdKeyPattern[idx] = pattern
-					logger.Debugf("share_threshold enabled for entry index %d, using wildcard pattern %s", idx, pattern)
+					logger.Debug(context.Background(), fmt.Sprintf("share_threshold enabled for entry index %d, using wildcard pattern %s", idx, pattern))
 				}
 			} else {
-				logger.Debugf("request depth does not match config depth, there are more entries in the request's descriptor")
+				logger.Debug(context.Background(), "request depth does not match config depth, there are more entries in the request's descriptor")
 			}
 		}
 
 		if nextDescriptor != nil && len(nextDescriptor.descriptors) > 0 {
-			logger.Debugf("iterating to next level")
+			logger.Debug(context.Background(), "iterating to next level")
 			descriptorsMap = nextDescriptor.descriptors
 		} else {
 			if rateLimit != nil && rateLimit.DetailedMetric {
@@ -699,7 +699,7 @@ func ConfigFileContentToYaml(fileName, content string) *YamlRoot {
 	err := yaml.Unmarshal([]byte(content), &any)
 	if err != nil {
 		errorText := fmt.Sprintf("error loading config file: %s", err.Error())
-		logger.Debug(errorText)
+		logger.Debug(context.Background(), errorText)
 		panic(newRateLimitConfigError(fileName, errorText))
 	}
 	validateYamlKeys(fileName, any)
@@ -708,7 +708,7 @@ func ConfigFileContentToYaml(fileName, content string) *YamlRoot {
 	err = yaml.Unmarshal([]byte(content), &root)
 	if err != nil {
 		errorText := fmt.Sprintf("error loading config file: %s", err.Error())
-		logger.Debug(errorText)
+		logger.Debug(context.Background(), errorText)
 		panic(newRateLimitConfigError(fileName, errorText))
 	}
 
