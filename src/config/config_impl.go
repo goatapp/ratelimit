@@ -453,11 +453,11 @@ func (this *rateLimitConfigImpl) Dump() string {
 func (this *rateLimitConfigImpl) GetLimit(
 	ctx context.Context, domain string, descriptor *pb_struct.RateLimitDescriptor,
 ) *RateLimit {
-	logger.Debug(context.Background(), "starting get limit lookup")
+	logger.Debug(ctx, "starting get limit lookup")
 	var rateLimit *RateLimit = nil
 	value := this.domains[domain]
 	if value == nil {
-		logger.Debug(context.Background(), fmt.Sprintf("unknown domain '%s'", domain))
+		logger.Debug(ctx, fmt.Sprintf("unknown domain '%s'", domain))
 		domainStats := this.statsManager.NewDomainStats(domain)
 		domainStats.NotFound.Inc()
 		return rateLimit
@@ -504,7 +504,7 @@ func (this *rateLimitConfigImpl) GetLimit(
 		detailedMetricFullKey.WriteString(".")
 		detailedMetricFullKey.WriteString(finalKey)
 
-		logger.Debug(context.Background(), fmt.Sprintf("looking up key: %s", finalKey))
+		logger.Debug(ctx, fmt.Sprintf("looking up key: %s", finalKey))
 		nextDescriptor := descriptorsMap[finalKey]
 		var matchedWildcardKey string
 
@@ -521,7 +521,7 @@ func (this *rateLimitConfigImpl) GetLimit(
 		matchedUsingValue := nextDescriptor != nil
 		if nextDescriptor == nil {
 			finalKey = entry.Key
-			logger.Debug(context.Background(), fmt.Sprintf("looking up key: %s", finalKey))
+			logger.Debug(ctx, fmt.Sprintf("looking up key: %s", finalKey))
 			nextDescriptor = descriptorsMap[finalKey]
 			matchedUsingValue = false
 		}
@@ -535,7 +535,7 @@ func (this *rateLimitConfigImpl) GetLimit(
 
 			wildcardValue := strings.TrimPrefix(nextDescriptor.wildcardPattern, entry.Key+"_")
 			shareThresholdPatterns[i] = wildcardValue
-			logger.Debug(context.Background(), fmt.Sprintf("tracking share_threshold for entry index %d (key %s), wildcard pattern %s", i, entry.Key, wildcardValue))
+			logger.Debug(ctx, fmt.Sprintf("tracking share_threshold for entry index %d (key %s), wildcard pattern %s", i, entry.Key, wildcardValue))
 		}
 
 		// Build value_to_metric metrics path for this level
@@ -579,7 +579,7 @@ func (this *rateLimitConfigImpl) GetLimit(
 		}
 
 		if nextDescriptor != nil && nextDescriptor.limit != nil {
-			logger.Debug(context.Background(), fmt.Sprintf("found rate limit: %s", finalKey))
+			logger.Debug(ctx, fmt.Sprintf("found rate limit: %s", finalKey))
 
 			if i == len(descriptor.Entries)-1 {
 				// Create a copy of the rate limit to avoid modifying the shared object
@@ -607,15 +607,15 @@ func (this *rateLimitConfigImpl) GetLimit(
 
 				for idx, pattern := range shareThresholdPatterns {
 					rateLimit.ShareThresholdKeyPattern[idx] = pattern
-					logger.Debug(context.Background(), fmt.Sprintf("share_threshold enabled for entry index %d, using wildcard pattern %s", idx, pattern))
+					logger.Debug(ctx, fmt.Sprintf("share_threshold enabled for entry index %d, using wildcard pattern %s", idx, pattern))
 				}
 			} else {
-				logger.Debug(context.Background(), "request depth does not match config depth, there are more entries in the request's descriptor")
+				logger.Debug(ctx, "request depth does not match config depth, there are more entries in the request's descriptor")
 			}
 		}
 
 		if nextDescriptor != nil && len(nextDescriptor.descriptors) > 0 {
-			logger.Debug(context.Background(), "iterating to next level")
+			logger.Debug(ctx, "iterating to next level")
 			descriptorsMap = nextDescriptor.descriptors
 		} else {
 			if rateLimit != nil && rateLimit.DetailedMetric {

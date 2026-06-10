@@ -251,7 +251,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 	for i, cacheKey := range cacheKeys {
 		if limits[i] == nil {
 			limitInfo := limiter.NewRateLimitInfo(nil, 0, 0, 0, 0)
-			responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(cacheKey.Key,
+			responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(ctx, cacheKey.Key,
 				limitInfo, isOverLimitWithLocalCache[i], uint64(hitsAddend))
 			continue
 		}
@@ -286,7 +286,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 
 		limitInfo := limiter.NewRateLimitInfo(limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0)
 
-		responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(cacheKey.Key,
+		responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(ctx, cacheKey.Key,
 			limitInfo, isOverLimitWithLocalCache[i], uint64(hitsAddend))
 	}
 

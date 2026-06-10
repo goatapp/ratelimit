@@ -82,7 +82,7 @@ func (this *BaseRateLimiter) IsOverLimitThresholdReached(limitInfo *LimitInfo) b
 
 // Generates response descriptor status based on cache key, over the limit with local cache, over the limit and
 // near the limit thresholds. Thresholds are checked in order and are mutually exclusive.
-func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *LimitInfo,
+func (this *BaseRateLimiter) GetResponseDescriptorStatus(ctx context.Context, key string, limitInfo *LimitInfo,
 	isOverLimitWithLocalCache bool, hitsAddend uint64,
 ) *pb.RateLimitResponse_DescriptorStatus {
 	if key == "" {
@@ -102,7 +102,7 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 		// The nearLimitThreshold is the number of requests that can be made before hitting the nearLimitRatio.
 		// We need to know it in both the OK and OVER_LIMIT scenarios.
 		limitInfo.nearLimitThreshold = uint64(math.Floor(float64(float32(limitInfo.overLimitThreshold) * this.nearLimitRatio)))
-		logger.Debug(context.Background(), fmt.Sprintf("cache key: %s current: %d limit: %d", key, limitInfo.limitAfterIncrease, limitInfo.overLimitThreshold))
+		logger.Debug(ctx, fmt.Sprintf("cache key: %s current: %d limit: %d", key, limitInfo.limitAfterIncrease, limitInfo.overLimitThreshold))
 		if limitInfo.limitAfterIncrease > limitInfo.overLimitThreshold {
 			isOverLimit = true
 			responseDescriptorStatus = this.generateResponseDescriptorStatus(pb.RateLimitResponse_OVER_LIMIT,
@@ -120,7 +120,7 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 				// In the time of 1h1m, since the cache key becomes different (mongo_2h), it won't get ratelimited.
 				err := this.localCache.Set([]byte(key), []byte{}, int(utils.UnitToDivider(limitInfo.limit.Limit.Unit)))
 				if err != nil {
-					logger.Error(context.Background(), fmt.Sprintf("Failing to set local cache key: %s", key))
+					logger.Error(ctx, fmt.Sprintf("Failing to set local cache key: %s", key))
 				}
 			}
 		} else {
@@ -135,7 +135,7 @@ func (this *BaseRateLimiter) GetResponseDescriptorStatus(key string, limitInfo *
 
 	// If the limit is in ShadowMode, it should be always return OK
 	if isOverLimit && limitInfo.limit.ShadowMode {
-		logger.Debug(context.Background(), fmt.Sprintf("Limit with key %s, is in shadow_mode", limitInfo.limit.FullKey))
+		logger.Debug(ctx, fmt.Sprintf("Limit with key %s, is in shadow_mode", limitInfo.limit.FullKey))
 		responseDescriptorStatus.Code = pb.RateLimitResponse_OK
 		// Increase shadow mode stats if the limit was actually over the limit
 		this.increaseShadowModeStats(isOverLimitWithLocalCache, limitInfo, hitsAddend)
