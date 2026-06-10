@@ -158,3 +158,94 @@ func TestRedisTokenBucketShadowMode(t *testing.T) {
 	response = cache.DoLimit(context.Background(), request, limits)
 	assert.Equal(t, pb.RateLimitResponse_OK, response[0].Code)
 }
+
+func TestRedisTokenBucketLimitRemaining(t *testing.T) {
+	controller := gomock.NewController(t)
+	defer controller.Finish()
+
+	statsStore := gostats.NewStore(gostats.NewNullSink(), false)
+	sm := stats.NewMockStatManager(statsStore)
+	timeSource := mock_utils.NewMockTimeSource(controller)
+
+	redisSrv := mustNewRedisServer()
+	defer redisSrv.Close()
+
+	client := redis.NewClientImpl(context.Background(), statsStore, false, "", "tcp", "single", redisSrv.Addr(), 1, 0, 0, nil, false, nil, 0, "", "", 0, 0, 0)
+	cache := redis.NewFixedRateLimitCacheImpl(client, nil, timeSource, rand.New(rand.NewSource(1)), 0, nil, 0.8, "", sm, false)
+
+	timeSource.EXPECT().UnixNow().Return(int64(1798825388)).AnyTimes()
+
+	request := common.NewRateLimitRequest("remaining_domain", [][][2]string{{{"key", "value"}}}, 1)
+	limits := []*config.RateLimit{config.NewRateLimit(5, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("remaining_key_value"), false, false, false, "", nil, false)}
+
+	// 5 tokens, consume 1 at a time, check LimitRemaining decreases
+	response := cache.DoLimit(context.Background(), request, limits)
+	assert.Equal(t, pb.RateLimitResponse_OK, response[0].Code)
+	assert.Equal(t, uint32(4), response[0].LimitRemaining)
+
+	response = cache.DoLimit(context.Background(), request, limits)
+	assert.Equal(t, pb.RateLimitResponse_OK, response[0].Code)
+	assert.Equal(t, uint32(3), response[0].LimitRemaining)
+
+	response = cache.DoLimit(context.Background(), request, limits)
+	assert.Equal(t, pb.RateLimitResponse_OK, response[0].Code)
+	assert.Equal(t, uint32(2), response[0].LimitRemaining)
+
+	response = cache.DoLimit(context.Background(), request, limits)
+	assert.Equal(t, pb.RateLimitResponse_OK, response[0].Code)
+	assert.Equal(t, uint32(1), response[0].LimitRemaining)
+
+	response = cache.DoLimit(context.Background(), request, limits)
+	assert.Equal(t, pb.RateLimitResponse_OK, response[0].Code)
+	assert.Equal(t, uint32(0), response[0].LimitRemaining)
+
+	// 6th request should be over limit
+	response = cache.DoLimit(context.Background(), request, limits)
+	assert.Equal(t, pb.RateLimitResponse_OVER_LIMIT, response[0].Code)
+	assert.Equal(t, uint32(0), response[0].LimitRemaining)
+}
+
+func TestRedisTokenBucketStopIncrementAllDescriptors(t *testing.T) {
+	controller := gomock.NewController(t)
+	defer controller.Finish()
+
+	statsStore := gostats.NewStore(gostats.NewNullSink(), false)
+	sm := stats.NewMockStatManager(statsStore)
+	timeSource := mock_utils.NewMockTimeSource(controller)
+
+	redisSrv := mustNewRedisServer()
+	defer redisSrv.Close()
+
+	client := redis.NewClientImpl(context.Background(), statsStore, false, "", "tcp", "single", redisSrv.Addr(), 1, 0, 0, nil, false, nil, 0, "", "", 0, 0, 0)
+	cache := redis.NewFixedRateLimitCacheImpl(client, nil, timeSource, rand.New(rand.NewSource(1)), 0, nil, 0.8, "", sm, true)
+
+	timeSource.EXPECT().UnixNow().Return(int64(1798825388)).AnyTimes()
+
+	// Two descriptors: one with limit 2, one with limit 10
+	// When key1 goes over limit, ALL descriptors stop consuming tokens
+	request := common.NewRateLimitRequest("multi_domain", [][][2]string{{{"key1", "val1"}}, {{"key2", "val2"}}}, 1)
+	limits := []*config.RateLimit{
+		config.NewRateLimit(2, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("multi_key1_val1"), false, false, false, "", nil, false),
+		config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("multi_key2_val2"), false, false, false, "", nil, false),
+	}
+
+	// First request: both pass
+	response := cache.DoLimit(context.Background(), request, limits)
+	assert.Equal(t, pb.RateLimitResponse_OK, response[0].Code)
+	assert.Equal(t, pb.RateLimitResponse_OK, response[1].Code)
+	assert.Equal(t, uint32(1), response[0].LimitRemaining)
+	assert.Equal(t, uint32(9), response[1].LimitRemaining)
+
+	// Second request: both pass (key1 uses its last token)
+	response = cache.DoLimit(context.Background(), request, limits)
+	assert.Equal(t, pb.RateLimitResponse_OK, response[0].Code)
+	assert.Equal(t, pb.RateLimitResponse_OK, response[1].Code)
+	assert.Equal(t, uint32(0), response[0].LimitRemaining)
+	assert.Equal(t, uint32(8), response[1].LimitRemaining)
+
+	// Third request: key1 is over limit, key2 stops consuming too (all descriptors freeze)
+	response = cache.DoLimit(context.Background(), request, limits)
+	assert.Equal(t, pb.RateLimitResponse_OVER_LIMIT, response[0].Code)
+	assert.Equal(t, pb.RateLimitResponse_OK, response[1].Code)
+	assert.Equal(t, uint32(8), response[1].LimitRemaining)
+}

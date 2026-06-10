@@ -24,7 +24,6 @@ import (
 )
 
 var script = `
--- ARGV[1] = rate limit key
 -- KEYS[1] = token count key
 -- KEYS[2] = timestamp key
 -- ARGV[1] = tokens per replenish period
@@ -54,16 +53,18 @@ current_tokens = math.min(limit, current_tokens + (periods_since_last_refreshed 
 
 local allowed = 0
 local retry_after = 0
+local periods_until_full = math.ceil(limit / rate)
+local ttl = math.ceil(periods_until_full * period)
+
 if current_tokens >= requested then
 	allowed = 1
 	current_tokens = current_tokens - requested
+end
 
-	local periods_until_full = math.ceil(limit / rate)
-	local ttl = math.ceil(periods_until_full * period)
+redis.call('SET', KEYS[1], current_tokens, 'PXAT', ttl + now)
+redis.call('SET', KEYS[2], time_of_last_replenishment, 'PXAT', ttl + now)
 
-	redis.call('SET', KEYS[1], current_tokens, 'PXAT', ttl + now)
-	redis.call('SET', KEYS[2], time_of_last_replenishment, 'PXAT', ttl + now)
-else
+if allowed == 0 then
 	retry_after = period - (now - time_of_last_replenishment)
 end
 
@@ -119,7 +120,6 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 
 	hitsAddendForRedis := hitsAddend
 	overlimitIndexes := make([]bool, len(request.Descriptors))
-	nearlimitIndexes := make([]bool, len(request.Descriptors))
 	isCacheKeyOverlimit := false
 
 	if this.stopCacheKeyIncrementWhenOverlimit {
@@ -154,7 +154,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 			}
 		}
 
-		if len(cacheKeys) > 1 && !isCacheKeyOverlimit {
+		if !isCacheKeyOverlimit {
 			if pipelineToGet != nil {
 				checkError(this.client.PipeDo(ctx, pipelineToGet))
 			}
@@ -175,15 +175,9 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 					parsed, _ := strconv.ParseUint(currentCount[i], 10, 32)
 					tokensRemaining = uint32(parsed)
 				}
-				allowed := tokensRemaining >= hitsAddend
-				limitAfterIncrease := getLimitAfterIncrease(tokensRemaining, limits[i].Limit.RequestsPerUnit, hitsAddend, allowed)
-				limitBeforeIncrease := limitAfterIncrease - hitsAddend
 
-				limitInfo := limiter.NewRateLimitInfo(limits[i], uint64(limitBeforeIncrease), uint64(limitAfterIncrease), 0, 0)
-
-				if this.baseRateLimiter.IsOverLimitThresholdReached(limitInfo) {
+				if tokensRemaining < hitsAddend {
 					hitsAddendForRedis = 0
-					nearlimitIndexes[i] = true
 				}
 			}
 		}
@@ -214,6 +208,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 		logger.Debug(ctx, fmt.Sprintf("looking up cache key: %s", cacheKey.Key))
 
 		replenishPeriod := time.Duration(utils.UnitToDivider(limits[i].Limit.Unit) * int64(time.Second)).Milliseconds()
+		// Compensate for network/processing overhead on sub-second limits
 		if replenishPeriod == 1000 {
 			replenishPeriod = 775
 		}
@@ -254,49 +249,48 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 	responseDescriptorStatuses := make([]*pb.RateLimitResponse_DescriptorStatus,
 		len(request.Descriptors))
 	for i, cacheKey := range cacheKeys {
-		limitAfterIncrease := uint32(0)
-		limitBeforeIncrease := uint32(0)
-		if limits[i] != nil {
-			currentTokens := uint32(results[i][0])
-			allowed := results[i][2] != 0
-
-			limitAfterIncrease = getLimitAfterIncrease(currentTokens, limits[i].Limit.RequestsPerUnit, hitsAddendForRedis, allowed)
-			limitBeforeIncrease = limitAfterIncrease - hitsAddendForRedis
-
-			logger.Debug(ctx, fmt.Sprintf("pipeline result cache key %s current: %d", cacheKey.Key, limitAfterIncrease), logger.WithValue("redisKey", cacheKey.Key), logger.WithValue("redisCurrentTokens", currentTokens),
-				logger.WithValue("redisAllowed", allowed), logger.WithValue("redisRetryAfter", results[i][1]), logger.WithValue("redisLimitAfterIncrease", limitAfterIncrease))
+		if limits[i] == nil {
+			limitInfo := limiter.NewRateLimitInfo(nil, 0, 0, 0, 0)
+			responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(cacheKey.Key,
+				limitInfo, isOverLimitWithLocalCache[i], uint64(hitsAddend))
+			continue
 		}
 
-		limitInfo := limiter.NewRateLimitInfo(limits[i], uint64(limitBeforeIncrease), uint64(limitAfterIncrease), 0, 0)
+		currentTokens := uint32(results[i][0])
+		requestsPerUnit := limits[i].Limit.RequestsPerUnit
+
+		// When hitsAddendForRedis=0, the Lua script was a no-op probe.
+		// Determine actual allow/deny based on whether the bucket has enough tokens.
+		allowed := results[i][2] != 0
+		if hitsAddendForRedis == 0 && !isOverLimitWithLocalCache[i] {
+			allowed = currentTokens >= hitsAddend
+		}
+
+		// Translate token bucket state to the counter model expected by base_limiter:
+		// limitAfterIncrease = total tokens consumed (requestsPerUnit - tokensRemaining)
+		// When limitAfterIncrease > requestsPerUnit, it's over limit.
+		var limitAfterIncrease uint64
+		if allowed {
+			limitAfterIncrease = uint64(requestsPerUnit - currentTokens)
+		} else {
+			limitAfterIncrease = uint64(requestsPerUnit) + uint64(hitsAddend)
+		}
+
+		var limitBeforeIncrease uint64
+		if limitAfterIncrease >= uint64(hitsAddend) {
+			limitBeforeIncrease = limitAfterIncrease - uint64(hitsAddend)
+		}
+
+		logger.Debug(ctx, fmt.Sprintf("pipeline result cache key %s current: %d", cacheKey.Key, limitAfterIncrease), logger.WithValue("redisKey", cacheKey.Key), logger.WithValue("redisCurrentTokens", currentTokens),
+			logger.WithValue("redisAllowed", allowed), logger.WithValue("redisRetryAfter", results[i][1]), logger.WithValue("redisLimitAfterIncrease", limitAfterIncrease))
+
+		limitInfo := limiter.NewRateLimitInfo(limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0)
 
 		responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(cacheKey.Key,
 			limitInfo, isOverLimitWithLocalCache[i], uint64(hitsAddend))
 	}
 
 	return responseDescriptorStatuses
-}
-
-func getLimitAfterIncrease(currentTokens, requestsPerUnit, hitsAddend uint32, allowed bool) uint32 {
-	if hitsAddend == 0 {
-		if currentTokens == 0 {
-			return requestsPerUnit + 1
-		}
-		return requestsPerUnit - currentTokens
-	}
-
-	if currentTokens == 0 {
-		limitAfterIncrease := requestsPerUnit
-		if !allowed {
-			limitAfterIncrease = limitAfterIncrease + hitsAddend
-		}
-		return limitAfterIncrease
-	}
-
-	limitAfterIncrease := hitsAddend + requestsPerUnit - currentTokens
-	if allowed {
-		limitAfterIncrease = limitAfterIncrease - 1
-	}
-	return limitAfterIncrease
 }
 
 func (this *fixedRateLimitCacheImpl) Flush() {}
