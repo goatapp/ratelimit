@@ -90,7 +90,7 @@ func pipelineAppendScript(client Client, pipeline *Pipeline, key string, hitsAdd
 		strconv.FormatInt(currentTime, 10))
 }
 
-func pipelineAppendtoGet(client Client, pipeline *Pipeline, key string, result *uint32) {
+func pipelineAppendtoGet(client Client, pipeline *Pipeline, key string, result *string) {
 	*pipeline = client.PipeAppend(*pipeline, result, "GET", key)
 }
 
@@ -114,7 +114,7 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 	for i := range results {
 		results[i] = make([]int64, 3)
 	}
-	currentCount := make([]uint32, len(request.Descriptors))
+	currentCount := make([]string, len(request.Descriptors))
 	var pipeline, perSecondPipeline, pipelineToGet, perSecondPipelineToGet Pipeline
 
 	hitsAddendForRedis := hitsAddend
@@ -166,8 +166,17 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 				if cacheKey.Key == "" {
 					continue
 				}
-				allowed := currentCount[i] >= hitsAddend
-				limitAfterIncrease := getLimitAfterIncrease(currentCount[i], limits[i].Limit.RequestsPerUnit, hitsAddend, allowed)
+				// In token bucket mode: empty string means key doesn't exist (bucket is full).
+				// A value of "0" means the bucket is actually empty.
+				var tokensRemaining uint32
+				if currentCount[i] == "" {
+					tokensRemaining = limits[i].Limit.RequestsPerUnit
+				} else {
+					parsed, _ := strconv.ParseUint(currentCount[i], 10, 32)
+					tokensRemaining = uint32(parsed)
+				}
+				allowed := tokensRemaining >= hitsAddend
+				limitAfterIncrease := getLimitAfterIncrease(tokensRemaining, limits[i].Limit.RequestsPerUnit, hitsAddend, allowed)
 				limitBeforeIncrease := limitAfterIncrease - hitsAddend
 
 				limitInfo := limiter.NewRateLimitInfo(limits[i], uint64(limitBeforeIncrease), uint64(limitAfterIncrease), 0, 0)
@@ -216,23 +225,13 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 				perSecondPipeline = Pipeline{}
 			}
 
-			hitsAddendToUse := hitsAddendForRedis
-			if !nearlimitIndexes[i] {
-				hitsAddendToUse = hitsAddend
-			}
-
-			pipelineAppendScript(this.perSecondClient, &perSecondPipeline, cacheKey.Key, hitsAddendToUse, limits[i].Limit.RequestsPerUnit, limits[i].Limit.RequestsPerUnit, replenishPeriod, unixTime, &results[i])
+			pipelineAppendScript(this.perSecondClient, &perSecondPipeline, cacheKey.Key, hitsAddendForRedis, limits[i].Limit.RequestsPerUnit, limits[i].Limit.RequestsPerUnit, replenishPeriod, unixTime, &results[i])
 		} else {
 			if pipeline == nil {
 				pipeline = Pipeline{}
 			}
 
-			hitsAddendToUse := hitsAddendForRedis
-			if !nearlimitIndexes[i] {
-				hitsAddendToUse = hitsAddend
-			}
-
-			pipelineAppendScript(this.client, &pipeline, cacheKey.Key, hitsAddendToUse, limits[i].Limit.RequestsPerUnit, limits[i].Limit.RequestsPerUnit, replenishPeriod, unixTime, &results[i])
+			pipelineAppendScript(this.client, &pipeline, cacheKey.Key, hitsAddendForRedis, limits[i].Limit.RequestsPerUnit, limits[i].Limit.RequestsPerUnit, replenishPeriod, unixTime, &results[i])
 		}
 	}
 
@@ -261,8 +260,8 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 			currentTokens := uint32(results[i][0])
 			allowed := results[i][2] != 0
 
-			limitAfterIncrease = getLimitAfterIncrease(currentTokens, limits[i].Limit.RequestsPerUnit, hitsAddend, allowed)
-			limitBeforeIncrease = limitAfterIncrease - hitsAddend
+			limitAfterIncrease = getLimitAfterIncrease(currentTokens, limits[i].Limit.RequestsPerUnit, hitsAddendForRedis, allowed)
+			limitBeforeIncrease = limitAfterIncrease - hitsAddendForRedis
 
 			logger.Debug(ctx, fmt.Sprintf("pipeline result cache key %s current: %d", cacheKey.Key, limitAfterIncrease), logger.WithValue("redisKey", cacheKey.Key), logger.WithValue("redisCurrentTokens", currentTokens),
 				logger.WithValue("redisAllowed", allowed), logger.WithValue("redisRetryAfter", results[i][1]), logger.WithValue("redisLimitAfterIncrease", limitAfterIncrease))
@@ -278,20 +277,25 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 }
 
 func getLimitAfterIncrease(currentTokens, requestsPerUnit, hitsAddend uint32, allowed bool) uint32 {
-	limitAfterIncrease := uint32(0)
+	if hitsAddend == 0 {
+		if currentTokens == 0 {
+			return requestsPerUnit + 1
+		}
+		return requestsPerUnit - currentTokens
+	}
 
 	if currentTokens == 0 {
-		limitAfterIncrease = requestsPerUnit
+		limitAfterIncrease := requestsPerUnit
 		if !allowed {
 			limitAfterIncrease = limitAfterIncrease + hitsAddend
 		}
-	} else {
-		limitAfterIncrease = hitsAddend + requestsPerUnit - currentTokens
-		if allowed {
-			limitAfterIncrease = limitAfterIncrease - 1
-		}
+		return limitAfterIncrease
 	}
 
+	limitAfterIncrease := hitsAddend + requestsPerUnit - currentTokens
+	if allowed {
+		limitAfterIncrease = limitAfterIncrease - 1
+	}
 	return limitAfterIncrease
 }
 
