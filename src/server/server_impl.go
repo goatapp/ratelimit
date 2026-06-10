@@ -225,10 +225,9 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 	grpcOptions := []grpc.ServerOption{
 		keepaliveOpt,
 		grpc.ChainUnaryInterceptor(
-			s.GrpcUnaryInterceptor, // chain otel interceptor after the input interceptor
-			otelgrpc.UnaryServerInterceptor(),
+			s.GrpcUnaryInterceptor,
 		),
-		grpc.StreamInterceptor(otelgrpc.StreamServerInterceptor()),
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 	}
 	if s.GrpcServerUseTLS {
 		grpcServerTlsConfig := s.GrpcServerTlsConfig
