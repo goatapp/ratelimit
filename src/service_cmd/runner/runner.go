@@ -33,6 +33,7 @@ import (
 )
 
 type Runner struct {
+	name            string
 	statsManager    stats.Manager
 	settings        settings.Settings
 	srv             server.Server
@@ -42,7 +43,7 @@ type Runner struct {
 	done            chan struct{}
 }
 
-func NewRunner(s settings.Settings) Runner {
+func NewRunner(name string, s settings.Settings) Runner {
 	var store gostats.Store
 
 	switch {
@@ -87,6 +88,7 @@ func NewRunner(s settings.Settings) Runner {
 	go store.Start(time.NewTicker(s.StatsFlushInterval))
 
 	return Runner{
+		name:         name,
 		statsManager: stats.NewStatManager(store, s),
 		settings:     s,
 		done:         make(chan struct{}),
@@ -167,7 +169,7 @@ func (runner *Runner) Run() {
 
 	serverReporter := metrics.NewServerReporter(runner.statsManager.GetStatsStore().ScopeWithTags("ratelimit_server", s.ExtraTags))
 
-	srv := server.NewServer(s, "ratelimit", runner.statsManager, localCache, settings.GrpcUnaryInterceptor(serverReporter.UnaryServerInterceptor()))
+	srv := server.NewServer(s, runner.name, runner.statsManager, localCache, settings.GrpcUnaryInterceptor(serverReporter.UnaryServerInterceptor()))
 	runner.mu.Lock()
 	runner.srv = srv
 	runner.mu.Unlock()

@@ -6,6 +6,6 @@ import (
 )
 
 func main() {
-	runner := runner.NewRunner(settings.NewSettings())
+	runner := runner.NewRunner("ratelimit", settings.NewSettings())
 	runner.Run()
 }
