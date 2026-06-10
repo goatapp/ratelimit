@@ -69,7 +69,7 @@ func (this *rateLimitMemcacheImpl) DoLimit(
 	request *pb.RateLimitRequest,
 	limits []*config.RateLimit,
 ) []*pb.RateLimitResponse_DescriptorStatus {
-	logger.Debug(context.Background(), "starting cache lookup")
+	logger.Debug(ctx, "starting cache lookup")
 
 	// request.HitsAddend could be 0 (default value) if not specified by the caller in the Ratelimit request.
 	hitsAddends := utils.GetHitsAddends(request)
@@ -89,11 +89,11 @@ func (this *rateLimitMemcacheImpl) DoLimit(
 		// Check if key is over the limit in local cache.
 		if this.baseRateLimiter.IsOverLimitWithLocalCache(cacheKey.Key) {
 			isOverLimitWithLocalCache[i] = true
-			logger.Debug(context.Background(), fmt.Sprintf("cache key is over the limit: %s", cacheKey.Key))
+			logger.Debug(ctx, fmt.Sprintf("cache key is over the limit: %s", cacheKey.Key))
 			continue
 		}
 
-		logger.Debug(context.Background(), fmt.Sprintf("looking up cache key: %s", cacheKey.Key))
+		logger.Debug(ctx, fmt.Sprintf("looking up cache key: %s", cacheKey.Key))
 		keysToGet = append(keysToGet, cacheKey.Key)
 	}
 
@@ -116,7 +116,7 @@ func (this *rateLimitMemcacheImpl) DoLimit(
 	if len(keysToGet) > 0 {
 		memcacheValues, err = this.client.GetMulti(keysToGet)
 		if err != nil {
-			logger.Error(context.Background(), fmt.Sprintf("Error multi-getting memcache keys (%s): %s", keysToGet, err))
+			logger.Error(ctx, fmt.Sprintf("Error multi-getting memcache keys (%s): %s", keysToGet, err))
 		}
 	}
 
@@ -127,7 +127,7 @@ func (this *rateLimitMemcacheImpl) DoLimit(
 		if ok {
 			decoded, err := strconv.ParseInt(string(rawMemcacheValue.Value), 10, 32)
 			if err != nil {
-				logger.Error(context.Background(), fmt.Sprintf("Unexpected non-numeric value in memcached: %v", rawMemcacheValue))
+				logger.Error(ctx, fmt.Sprintf("Unexpected non-numeric value in memcached: %v", rawMemcacheValue))
 			} else {
 				limitBeforeIncrease = uint64(decoded)
 			}
