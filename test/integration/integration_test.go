@@ -139,7 +139,8 @@ func TestBasicConfig_ExtraTags(t *testing.T) {
 
 		_, err = c.ShouldRateLimit(
 			context.Background(),
-			common.NewRateLimitRequest("basic", [][][2]string{{{getCacheKey("key1", false), "foo"}}}, 1))
+			common.NewRateLimitRequest("basic", [][][2]string{{{getCacheKey("key1", false), "foo"}}}, 1),
+		)
 		assert.NoError(err)
 
 		// Manually flush the cache for local_cache stats
@@ -149,12 +150,14 @@ func TestBasicConfig_ExtraTags(t *testing.T) {
 		// This test looks for the extra tags requested.
 		key1HitCounter := runner.GetStatsStore().NewCounterWithTags(
 			fmt.Sprintf("ratelimit.service.rate_limit.basic.%s.total_hits", getCacheKey("key1", false)),
-			extraTagsSettings.ExtraTags)
+			extraTagsSettings.ExtraTags,
+		)
 		assert.Equal(1, int(key1HitCounter.Value()))
 
 		configLoadStat := runner.GetStatsStore().NewCounterWithTags(
 			"ratelimit.service.config_load_success",
-			extraTagsSettings.ExtraTags)
+			extraTagsSettings.ExtraTags,
+		)
 		assert.Equal(1, int(configLoadStat.Value()))
 
 		// NOTE: This doesn't currently test that the extra tags are present for:
@@ -560,14 +563,16 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 
 		response, err := c.ShouldRateLimit(
 			context.Background(),
-			common.NewRateLimitRequest("foo", [][][2]string{{{getCacheKey("hello", enable_local_cache), "world"}}}, 1))
+			common.NewRateLimitRequest("foo", [][][2]string{{{getCacheKey("hello", enable_local_cache), "world"}}}, 1),
+		)
 		common.AssertProtoEqual(
 			assert,
 			&pb.RateLimitResponse{
 				OverallCode: pb.RateLimitResponse_OK,
 				Statuses:    []*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OK, CurrentLimit: nil, LimitRemaining: 0}},
 			},
-			response)
+			response,
+		)
 		assert.NoError(err)
 
 		// Manually flush the cache for local_cache stats
@@ -580,7 +585,8 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 
 		response, err = c.ShouldRateLimit(
 			context.Background(),
-			common.NewRateLimitRequest("basic", [][][2]string{{{getCacheKey("key1", enable_local_cache), "foo"}}}, 1))
+			common.NewRateLimitRequest("basic", [][][2]string{{{getCacheKey("key1", enable_local_cache), "foo"}}}, 1),
+		)
 		durRemaining := response.GetStatuses()[0].DurationUntilReset
 
 		common.AssertProtoEqual(
@@ -591,7 +597,8 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 					newDescriptorStatus(pb.RateLimitResponse_OK, 50, pb.RateLimitResponse_RateLimit_SECOND, 49, durRemaining),
 				},
 			},
-			response)
+			response,
+		)
 		assert.NoError(err)
 
 		// store.NewCounter returns the existing counter.
@@ -617,7 +624,9 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 			response, err = c.ShouldRateLimit(
 				context.Background(),
 				common.NewRateLimitRequest(
-					"another", [][][2]string{{{getCacheKey("key2", enable_local_cache), strconv.Itoa(randomInt)}}}, 1))
+					"another", [][][2]string{{{getCacheKey("key2", enable_local_cache), strconv.Itoa(randomInt)}}}, 1,
+				),
+			)
 
 			status := pb.RateLimitResponse_OK
 			limitRemaining := uint32(20 - (i + 1))
@@ -635,7 +644,8 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 						newDescriptorStatus(status, 20, pb.RateLimitResponse_RateLimit_MINUTE, limitRemaining, durRemaining),
 					},
 				},
-				response)
+				response,
+			)
 			assert.NoError(err)
 			key2HitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("ratelimit.service.rate_limit.another.%s.total_hits", getCacheKey("key2", enable_local_cache)))
 			assert.Equal(i+1, int(key2HitCounter.Value()))
@@ -683,7 +693,9 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 					[][][2]string{
 						{{getCacheKey("key2", enable_local_cache), strconv.Itoa(randomInt)}},
 						{{getCacheKey("key3", enable_local_cache), strconv.Itoa(randomInt)}},
-					}, 1))
+					}, 1,
+				),
+			)
 
 			status := pb.RateLimitResponse_OK
 			limitRemaining1 := uint32(20 - (i + 1))
@@ -708,7 +720,8 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 						newDescriptorStatus(status, 10, pb.RateLimitResponse_RateLimit_HOUR, limitRemaining2, durRemaining2),
 					},
 				},
-				response)
+				response,
+			)
 			assert.NoError(err)
 
 			key2HitCounter := runner.GetStatsStore().NewCounter(fmt.Sprintf("ratelimit.service.rate_limit.another.%s.total_hits", getCacheKey("key2", enable_local_cache)))
@@ -768,13 +781,15 @@ func testBasicBaseConfig(s settings.Settings) func(*testing.T) {
 		// Test DurationUntilReset by hitting same key twice
 		resp1, err := c.ShouldRateLimit(
 			context.Background(),
-			common.NewRateLimitRequest("another", [][][2]string{{{getCacheKey("key4", enable_local_cache), "durTest"}}}, 1))
+			common.NewRateLimitRequest("another", [][][2]string{{{getCacheKey("key4", enable_local_cache), "durTest"}}}, 1),
+		)
 
 		time.Sleep(2 * time.Second) // Wait to allow duration to tick down
 
 		resp2, err := c.ShouldRateLimit(
 			context.Background(),
-			common.NewRateLimitRequest("another", [][][2]string{{{getCacheKey("key4", enable_local_cache), "durTest"}}}, 1))
+			common.NewRateLimitRequest("another", [][][2]string{{{getCacheKey("key4", enable_local_cache), "durTest"}}}, 1),
+		)
 
 		assert.Less(resp2.GetStatuses()[0].DurationUntilReset.GetSeconds(), resp1.GetStatuses()[0].DurationUntilReset.GetSeconds())
 	}
@@ -817,14 +832,16 @@ func testConfigReload(s settings.Settings, reloadConfFunc, restoreConfFunc func(
 
 		response, err := c.ShouldRateLimit(
 			context.Background(),
-			common.NewRateLimitRequest("reload", [][][2]string{{{getCacheKey("block", enable_local_cache), "foo"}}}, 1))
+			common.NewRateLimitRequest("reload", [][][2]string{{{getCacheKey("block", enable_local_cache), "foo"}}}, 1),
+		)
 		common.AssertProtoEqual(
 			assert,
 			&pb.RateLimitResponse{
 				OverallCode: pb.RateLimitResponse_OK,
 				Statuses:    []*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OK}},
 			},
-			response)
+			response,
+		)
 		assert.NoError(err)
 
 		runner.GetStatsStore().Flush()
@@ -838,7 +855,8 @@ func testConfigReload(s settings.Settings, reloadConfFunc, restoreConfFunc func(
 
 		response, err = c.ShouldRateLimit(
 			context.Background(),
-			common.NewRateLimitRequest("reload", [][][2]string{{{getCacheKey("key1", enable_local_cache), "foo"}}}, 1))
+			common.NewRateLimitRequest("reload", [][][2]string{{{getCacheKey("key1", enable_local_cache), "foo"}}}, 1),
+		)
 
 		durRemaining := response.GetStatuses()[0].DurationUntilReset
 		common.AssertProtoEqual(
@@ -849,7 +867,8 @@ func testConfigReload(s settings.Settings, reloadConfFunc, restoreConfFunc func(
 					newDescriptorStatus(pb.RateLimitResponse_OK, 50, pb.RateLimitResponse_RateLimit_SECOND, 49, durRemaining),
 				},
 			},
-			response)
+			response,
+		)
 		assert.NoError(err)
 
 		restoreConfFunc()
@@ -939,7 +958,8 @@ func testShareThreshold(s settings.Settings) func(*testing.T) {
 		for i := 0; i < 10; i++ {
 			response, err := c.ShouldRateLimit(
 				context.Background(),
-				common.NewRateLimitRequest(domain, [][][2]string{{{"files", "files/a.pdf"}}}, 1))
+				common.NewRateLimitRequest(domain, [][][2]string{{{"files", "files/a.pdf"}}}, 1),
+			)
 			assert.NoError(err)
 			// Each request can be OK or OVER_LIMIT (depending on when limit is reached)
 			assert.True(response.OverallCode == pb.RateLimitResponse_OK || response.OverallCode == pb.RateLimitResponse_OVER_LIMIT,
@@ -949,7 +969,8 @@ func testShareThreshold(s settings.Settings) func(*testing.T) {
 		// Now make a request with files/b.csv - must be OVER_LIMIT because it shares the threshold
 		response, err := c.ShouldRateLimit(
 			context.Background(),
-			common.NewRateLimitRequest(domain, [][][2]string{{{"files", "files/b.csv"}}}, 1))
+			common.NewRateLimitRequest(domain, [][][2]string{{{"files", "files/b.csv"}}}, 1),
+		)
 		assert.NoError(err)
 		durRemaining := response.GetStatuses()[0].DurationUntilReset
 		common.AssertProtoEqual(
@@ -960,7 +981,8 @@ func testShareThreshold(s settings.Settings) func(*testing.T) {
 					newDescriptorStatus(pb.RateLimitResponse_OVER_LIMIT, 10, pb.RateLimitResponse_RateLimit_HOUR, 0, durRemaining),
 				},
 			},
-			response)
+			response,
+		)
 
 		// Test Case 2: share_threshold: false - different values should have isolated thresholds
 		// Use random values with prefix files_no_share to ensure uniqueness (based on timestamp)
@@ -972,7 +994,8 @@ func testShareThreshold(s settings.Settings) func(*testing.T) {
 			uniqueValue := fmt.Sprintf("files_no_share/%d-%d", baseTimestamp, r.Int63())
 			response, err := c.ShouldRateLimit(
 				context.Background(),
-				common.NewRateLimitRequest(domain, [][][2]string{{{"files_no_share", uniqueValue}}}, 1))
+				common.NewRateLimitRequest(domain, [][][2]string{{{"files_no_share", uniqueValue}}}, 1),
+			)
 			assert.NoError(err)
 			// Each value has its own isolated threshold, so each request should have remaining = 9 (10 - 1)
 			expectedRemaining := uint32(9)
@@ -985,7 +1008,8 @@ func testShareThreshold(s settings.Settings) func(*testing.T) {
 						newDescriptorStatus(pb.RateLimitResponse_OK, 10, pb.RateLimitResponse_RateLimit_HOUR, expectedRemaining, durRemaining),
 					},
 				},
-				response)
+				response,
+			)
 		}
 	}
 }

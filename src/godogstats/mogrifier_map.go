@@ -78,18 +78,19 @@ func newMogrifierMapFromEnv(keys []string) (mogrifierMap, error) {
 			}
 		}
 
-		mogrifiers = append(mogrifiers, mogrifierEntry{
-			matcher: re,
-			handler: func(matches []string) (string, []string) {
-				name := nameHandler(matches)
-				tags := make([]string, 0, len(tagHandlers))
-				for tagKey, handler := range tagHandlers {
-					tagValue := handler(matches)
-					tags = append(tags, tagKey+":"+tagValue)
-				}
-				return name, tags
+		mogrifiers = append(
+			mogrifiers, mogrifierEntry{
+				matcher: re,
+				handler: func(matches []string) (string, []string) {
+					name := nameHandler(matches)
+					tags := make([]string, 0, len(tagHandlers))
+					for tagKey, handler := range tagHandlers {
+						tagValue := handler(matches)
+						tags = append(tags, tagKey+":"+tagValue)
+					}
+					return name, tags
+				},
 			},
-		},
 		)
 
 	}

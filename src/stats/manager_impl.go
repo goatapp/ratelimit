@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	logger "github.com/goatapp/ratelimit/src/log"
 	gostats "github.com/lyft/gostats"
+
+	logger "github.com/goatapp/ratelimit/src/log"
 
 	"github.com/goatapp/ratelimit/src/settings"
 	"github.com/goatapp/ratelimit/src/utils"

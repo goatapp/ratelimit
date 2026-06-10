@@ -10,7 +10,6 @@ import (
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/resource/v3"
-	logger "github.com/goatapp/ratelimit/src/log"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/jpillora/backoff"
 	"google.golang.org/grpc"
@@ -19,6 +18,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/structpb"
+
+	logger "github.com/goatapp/ratelimit/src/log"
 
 	"github.com/goatapp/ratelimit/src/config"
 	"github.com/goatapp/ratelimit/src/settings"

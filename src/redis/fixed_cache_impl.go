@@ -97,8 +97,8 @@ func pipelineAppendtoGet(client Client, pipeline *Pipeline, key string, result *
 func (this *fixedRateLimitCacheImpl) DoLimit(
 	ctx context.Context,
 	request *pb.RateLimitRequest,
-	limits []*config.RateLimit) []*pb.RateLimitResponse_DescriptorStatus {
-
+	limits []*config.RateLimit,
+) []*pb.RateLimitResponse_DescriptorStatus {
 	logger.Debug(ctx, "starting cache lookup")
 
 	hitsAddend := max(uint32(1), request.HitsAddend)
@@ -236,7 +236,8 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 		}
 	}
 
-	_, span := tracer.Start(ctx, "Redis Pipeline Execution",
+	_, span := tracer.Start(
+		ctx, "Redis Pipeline Execution",
 		trace.WithAttributes(
 			attribute.Int("pipeline length", len(pipeline)),
 			attribute.Int("perSecondPipeline length", len(perSecondPipeline)),
@@ -298,7 +299,8 @@ func (this *fixedRateLimitCacheImpl) Flush() {}
 
 func NewFixedRateLimitCacheImpl(client Client, perSecondClient Client, timeSource utils.TimeSource,
 	jitterRand *rand.Rand, expirationJitterMaxSeconds int64, localCache *freecache.Cache, nearLimitRatio float32, cacheKeyPrefix string, statsManager stats.Manager,
-	stopCacheKeyIncrementWhenOverlimit bool) limiter.RateLimitCache {
+	stopCacheKeyIncrementWhenOverlimit bool,
+) limiter.RateLimitCache {
 	return &fixedRateLimitCacheImpl{
 		client:                             client,
 		perSecondClient:                    perSecondClient,

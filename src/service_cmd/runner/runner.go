@@ -14,8 +14,9 @@ import (
 
 	"github.com/coocood/freecache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
-	logger "github.com/goatapp/ratelimit/src/log"
 	gostats "github.com/lyft/gostats"
+
+	logger "github.com/goatapp/ratelimit/src/log"
 
 	"github.com/goatapp/ratelimit/src/godogstats"
 	"github.com/goatapp/ratelimit/src/limiter"
@@ -55,7 +56,8 @@ func NewRunner(s settings.Settings) Runner {
 		sink, err := godogstats.NewSink(
 			godogstats.WithStatsdHost(s.StatsdHost),
 			godogstats.WithStatsdPort(s.StatsdPort),
-			godogstats.WithMogrifierFromEnv(s.UseDogStatsdMogrifiers))
+			godogstats.WithMogrifierFromEnv(s.UseDogStatsdMogrifiers),
+		)
 		if err != nil {
 			logger.Fatal(context.Background(), fmt.Sprintf("Failed to create dogstatsd sink: %v", err))
 		}
@@ -115,7 +117,8 @@ func createLimiter(ctx context.Context, srv server.Server, s settings.Settings, 
 			rand.New(utils.NewLockedSource(time.Now().Unix())),
 			localCache,
 			srv.Scope(),
-			statsManager), &utils.MultiCloser{} // memcache client can't be closed
+			statsManager,
+		), &utils.MultiCloser{} // memcache client can't be closed
 	default:
 		logger.Fatal(context.Background(), fmt.Sprintf("Invalid setting for BackendType: %s", s.BackendType))
 		panic("This line should not be reachable")
@@ -195,7 +198,8 @@ func (runner *Runner) Run() {
 			if current, _, _ := service.GetCurrentConfig(); current != nil {
 				io.WriteString(writer, current.Dump())
 			}
-		})
+		},
+	)
 
 	srv.AddJsonHandler(service)
 

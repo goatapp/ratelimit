@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 
-	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/contrib/propagators/b3"
 	"go.opentelemetry.io/otel"
@@ -17,6 +16,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
+
+	logger "github.com/goatapp/ratelimit/src/log"
 )
 
 var (

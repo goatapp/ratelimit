@@ -57,7 +57,8 @@ func TestMemcached(t *testing.T) {
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OK, CurrentLimit: limits[0].Limit, LimitRemaining: 5, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)}},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(1), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[0].Stats.NearLimit.Value())
@@ -74,7 +75,8 @@ func TestMemcached(t *testing.T) {
 		[][][2]string{
 			{{"key2", "value2"}},
 			{{"key2", "value2"}, {"subkey2", "subvalue2"}},
-		}, 1)
+		}, 1,
+	)
 	limits = []*config.RateLimit{
 		nil,
 		config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_MINUTE, sm.NewStats("key2_value2_subkey2_subvalue2"), false, false, false, "", nil, false),
@@ -84,7 +86,8 @@ func TestMemcached(t *testing.T) {
 			{Code: pb.RateLimitResponse_OK, CurrentLimit: nil, LimitRemaining: 0},
 			{Code: pb.RateLimitResponse_OVER_LIMIT, CurrentLimit: limits[1].Limit, LimitRemaining: 0, DurationUntilReset: utils.CalculateReset(&limits[1].Limit.Unit, timeSource)},
 		},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(1), limits[1].Stats.TotalHits.Value())
 	assert.Equal(uint64(1), limits[1].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[1].Stats.NearLimit.Value())
@@ -109,7 +112,8 @@ func TestMemcached(t *testing.T) {
 		[][][2]string{
 			{{"key3", "value3"}},
 			{{"key3", "value3"}, {"subkey3", "subvalue3"}},
-		}, []uint64{1, 2})
+		}, []uint64{1, 2},
+	)
 	limits = []*config.RateLimit{
 		config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_HOUR, sm.NewStats("key3_value3"), false, false, false, "", nil, false),
 		config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_DAY, sm.NewStats("key3_value3_subkey3_subvalue3"), false, false, false, "", nil, false),
@@ -119,7 +123,8 @@ func TestMemcached(t *testing.T) {
 			{Code: pb.RateLimitResponse_OVER_LIMIT, CurrentLimit: limits[0].Limit, LimitRemaining: 0, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)},
 			{Code: pb.RateLimitResponse_OVER_LIMIT, CurrentLimit: limits[1].Limit, LimitRemaining: 0, DurationUntilReset: utils.CalculateReset(&limits[1].Limit.Unit, timeSource)},
 		},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(1), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(1), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[0].Stats.NearLimit.Value())
@@ -154,7 +159,8 @@ func TestMemcachedGetError(t *testing.T) {
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OK, CurrentLimit: limits[0].Limit, LimitRemaining: 9, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)}},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(1), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[0].Stats.NearLimit.Value())
@@ -172,7 +178,8 @@ func TestMemcachedGetError(t *testing.T) {
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OK, CurrentLimit: limits[0].Limit, LimitRemaining: 9, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)}},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(1), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[0].Stats.NearLimit.Value())
@@ -249,7 +256,8 @@ func TestOverLimitWithLocalCache(t *testing.T) {
 		[]*pb.RateLimitResponse_DescriptorStatus{
 			{Code: pb.RateLimitResponse_OK, CurrentLimit: limits[0].Limit, LimitRemaining: 4, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)},
 		},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(1), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimitWithLocalCache.Value())
@@ -270,7 +278,8 @@ func TestOverLimitWithLocalCache(t *testing.T) {
 		[]*pb.RateLimitResponse_DescriptorStatus{
 			{Code: pb.RateLimitResponse_OK, CurrentLimit: limits[0].Limit, LimitRemaining: 2, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)},
 		},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(2), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimitWithLocalCache.Value())
@@ -291,7 +300,8 @@ func TestOverLimitWithLocalCache(t *testing.T) {
 		[]*pb.RateLimitResponse_DescriptorStatus{
 			{Code: pb.RateLimitResponse_OVER_LIMIT, CurrentLimit: limits[0].Limit, LimitRemaining: 0, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)},
 		},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(3), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(1), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimitWithLocalCache.Value())
@@ -309,7 +319,8 @@ func TestOverLimitWithLocalCache(t *testing.T) {
 		[]*pb.RateLimitResponse_DescriptorStatus{
 			{Code: pb.RateLimitResponse_OVER_LIMIT, CurrentLimit: limits[0].Limit, LimitRemaining: 0, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)},
 		},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(4), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(2), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(1), limits[0].Stats.OverLimitWithLocalCache.Value())
@@ -350,7 +361,8 @@ func TestNearLimit(t *testing.T) {
 		[]*pb.RateLimitResponse_DescriptorStatus{
 			{Code: pb.RateLimitResponse_OK, CurrentLimit: limits[0].Limit, LimitRemaining: 4, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)},
 		},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(1), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[0].Stats.NearLimit.Value())
@@ -367,7 +379,8 @@ func TestNearLimit(t *testing.T) {
 		[]*pb.RateLimitResponse_DescriptorStatus{
 			{Code: pb.RateLimitResponse_OK, CurrentLimit: limits[0].Limit, LimitRemaining: 2, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)},
 		},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(2), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(1), limits[0].Stats.NearLimit.Value())
@@ -385,7 +398,8 @@ func TestNearLimit(t *testing.T) {
 		[]*pb.RateLimitResponse_DescriptorStatus{
 			{Code: pb.RateLimitResponse_OVER_LIMIT, CurrentLimit: limits[0].Limit, LimitRemaining: 0, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)},
 		},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(3), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(1), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(1), limits[0].Stats.NearLimit.Value())
@@ -404,7 +418,8 @@ func TestNearLimit(t *testing.T) {
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OK, CurrentLimit: limits[0].Limit, LimitRemaining: 15, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)}},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(3), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[0].Stats.NearLimit.Value())
@@ -422,7 +437,8 @@ func TestNearLimit(t *testing.T) {
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OK, CurrentLimit: limits[0].Limit, LimitRemaining: 1, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)}},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(2), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(1), limits[0].Stats.NearLimit.Value())
@@ -440,7 +456,8 @@ func TestNearLimit(t *testing.T) {
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OK, CurrentLimit: limits[0].Limit, LimitRemaining: 1, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)}},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(3), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(3), limits[0].Stats.NearLimit.Value())
@@ -458,7 +475,8 @@ func TestNearLimit(t *testing.T) {
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OVER_LIMIT, CurrentLimit: limits[0].Limit, LimitRemaining: 0, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)}},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(3), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(2), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(1), limits[0].Stats.NearLimit.Value())
@@ -476,7 +494,8 @@ func TestNearLimit(t *testing.T) {
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OVER_LIMIT, CurrentLimit: limits[0].Limit, LimitRemaining: 0, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)}},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(7), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(2), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(4), limits[0].Stats.NearLimit.Value())
@@ -494,7 +513,8 @@ func TestNearLimit(t *testing.T) {
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OVER_LIMIT, CurrentLimit: limits[0].Limit, LimitRemaining: 0, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)}},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(3), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(3), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[0].Stats.NearLimit.Value())
@@ -522,7 +542,8 @@ func TestMemcacheWithJitter(t *testing.T) {
 	client.EXPECT().GetMulti([]string{"domain_key_value"}).Return(nil, nil)
 	// First increment attempt will fail
 	client.EXPECT().Increment("domain_key_value", uint64(1)).Return(
-		uint64(0), memcache.ErrCacheMiss)
+		uint64(0), memcache.ErrCacheMiss,
+	)
 	// Add succeeds
 	client.EXPECT().Add(
 		&memcache.Item{
@@ -538,7 +559,8 @@ func TestMemcacheWithJitter(t *testing.T) {
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OK, CurrentLimit: limits[0].Limit, LimitRemaining: 9, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)}},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(1), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[0].Stats.NearLimit.Value())
@@ -563,7 +585,8 @@ func TestMemcacheAdd(t *testing.T) {
 
 	client.EXPECT().GetMulti([]string{"domain_key_value"}).Return(nil, nil)
 	client.EXPECT().Increment("domain_key_value", uint64(1)).Return(
-		uint64(0), memcache.ErrCacheMiss)
+		uint64(0), memcache.ErrCacheMiss,
+	)
 	// Add fails, must have been a race condition
 	client.EXPECT().Add(
 		&memcache.Item{
@@ -574,14 +597,16 @@ func TestMemcacheAdd(t *testing.T) {
 	).Return(memcache.ErrNotStored)
 	// Should work the second time, since some other client added the key.
 	client.EXPECT().Increment("domain_key_value", uint64(1)).Return(
-		uint64(2), nil)
+		uint64(2), nil,
+	)
 
 	request := common.NewRateLimitRequest("domain", [][][2]string{{{"key", "value"}}}, 1)
 	limits := []*config.RateLimit{config.NewRateLimit(10, pb.RateLimitResponse_RateLimit_SECOND, sm.NewStats("key_value"), false, false, false, "", nil, false)}
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OK, CurrentLimit: limits[0].Limit, LimitRemaining: 9, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)}},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(1), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[0].Stats.NearLimit.Value())
@@ -591,7 +616,8 @@ func TestMemcacheAdd(t *testing.T) {
 	timeSource.EXPECT().UnixNow().Return(int64(1234)).AnyTimes()
 	client.EXPECT().GetMulti([]string{"domain_key2_value2"}).Return(nil, nil)
 	client.EXPECT().Increment("domain_key2_value2", uint64(1)).Return(
-		uint64(0), memcache.ErrCacheMiss)
+		uint64(0), memcache.ErrCacheMiss,
+	)
 	client.EXPECT().Add(
 		&memcache.Item{
 			Key:        "domain_key2_value2",
@@ -605,7 +631,8 @@ func TestMemcacheAdd(t *testing.T) {
 
 	assert.Equal(
 		[]*pb.RateLimitResponse_DescriptorStatus{{Code: pb.RateLimitResponse_OK, CurrentLimit: limits[0].Limit, LimitRemaining: 9, DurationUntilReset: utils.CalculateReset(&limits[0].Limit.Unit, timeSource)}},
-		cache.DoLimit(context.Background(), request, limits))
+		cache.DoLimit(context.Background(), request, limits),
+	)
 	assert.Equal(uint64(1), limits[0].Stats.TotalHits.Value())
 	assert.Equal(uint64(0), limits[0].Stats.OverLimit.Value())
 	assert.Equal(uint64(0), limits[0].Stats.NearLimit.Value())

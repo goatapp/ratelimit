@@ -9,8 +9,9 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
-	logger "github.com/goatapp/ratelimit/src/log"
 	gostats "github.com/lyft/gostats"
+
+	logger "github.com/goatapp/ratelimit/src/log"
 )
 
 type godogStatsSink struct {

@@ -28,9 +28,11 @@ func loadConfigs(allConfigs []config.RateLimitConfigToLoad, mergeDomainConfigs b
 
 func main() {
 	configDirectory := flag.String(
-		"config_dir", "", "path to directory containing rate limit configs")
+		"config_dir", "", "path to directory containing rate limit configs",
+	)
 	mergeDomainConfigs := flag.Bool(
-		"merge_domain_configs", false, "whether to merge configurations, referencing the same domain")
+		"merge_domain_configs", false, "whether to merge configurations, referencing the same domain",
+	)
 	flag.Parse()
 	fmt.Printf("checking rate limit configs...\n")
 	fmt.Printf("loading config directory: %s\n", *configDirectory)

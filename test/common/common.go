@@ -65,7 +65,8 @@ func NewRateLimitRequest(domain string, descriptors [][][2]string, hitsAddend ui
 		for _, entry := range descriptor {
 			newDescriptor.Entries = append(
 				newDescriptor.Entries,
-				&pb_struct.RateLimitDescriptor_Entry{Key: entry[0], Value: entry[1]})
+				&pb_struct.RateLimitDescriptor_Entry{Key: entry[0], Value: entry[1]},
+			)
 		}
 		request.Descriptors = append(request.Descriptors, newDescriptor)
 	}

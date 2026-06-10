@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/lyft/goruntime/loader"
 	gostats "github.com/lyft/gostats"
+
+	logger "github.com/goatapp/ratelimit/src/log"
 
 	"github.com/goatapp/ratelimit/src/config"
 	"github.com/goatapp/ratelimit/src/settings"
@@ -84,7 +85,8 @@ func (p *FileProvider) setupRuntime() {
 			p.settings.RuntimeSubdirectory,
 			p.rootStore.ScopeWithTags("runtime", p.settings.ExtraTags),
 			&loader.SymlinkRefresher{RuntimePath: p.settings.RuntimePath},
-			loaderOpts...)
+			loaderOpts...,
+		)
 	} else {
 		directoryRefresher := &loader.DirectoryRefresher{}
 		// Adding loader.Remove to the default set of goruntime's FileSystemOps.
@@ -95,7 +97,8 @@ func (p *FileProvider) setupRuntime() {
 			p.settings.RuntimeAppDirectory,
 			p.rootStore.ScopeWithTags("runtime", p.settings.ExtraTags),
 			directoryRefresher,
-			loaderOpts...)
+			loaderOpts...,
+		)
 	}
 
 	if err != nil {

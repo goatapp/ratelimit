@@ -27,7 +27,8 @@ const (
 )
 
 func TestXdsProvider(t *testing.T) {
-	intSnapshot, _ := cache.NewSnapshot("1",
+	intSnapshot, _ := cache.NewSnapshot(
+		"1",
 		map[resource.Type][]types.Resource{
 			resource.RateLimitConfigType: {
 				&rls_config.RateLimitConfig{
@@ -95,7 +96,8 @@ func testNewXdsConfigUpdate(snapVersion *int, setSnapshotFunc common.SetSnapshot
 	return func(t *testing.T) {
 		assert := assert.New(t)
 
-		snapshot, _ := cache.NewSnapshot(fmt.Sprint(*snapVersion),
+		snapshot, _ := cache.NewSnapshot(
+			fmt.Sprint(*snapVersion),
 			map[resource.Type][]types.Resource{
 				resource.RateLimitConfigType: {
 					&rls_config.RateLimitConfig{
@@ -131,7 +133,8 @@ func testMultiDomainXdsConfigUpdate(snapVersion *int, setSnapshotFunc common.Set
 	return func(t *testing.T) {
 		assert := assert.New(t)
 
-		snapshot, _ := cache.NewSnapshot(fmt.Sprint(*snapVersion),
+		snapshot, _ := cache.NewSnapshot(
+			fmt.Sprint(*snapVersion),
 			map[resource.Type][]types.Resource{
 				resource.RateLimitConfigType: {
 					&rls_config.RateLimitConfig{
@@ -184,7 +187,8 @@ func testDeeperLimitsXdsConfigUpdate(snapVersion *int, setSnapshotFunc common.Se
 	return func(t *testing.T) {
 		assert := assert.New(t)
 
-		snapshot, _ := cache.NewSnapshot(fmt.Sprint(*snapVersion),
+		snapshot, _ := cache.NewSnapshot(
+			fmt.Sprint(*snapVersion),
 			map[resource.Type][]types.Resource{
 				resource.RateLimitConfigType: {
 					&rls_config.RateLimitConfig{
@@ -282,7 +286,8 @@ func testSameDomainMultipleXdsConfigUpdate(setSnapshotFunc common.SetSnapshotFun
 	return func(t *testing.T) {
 		assert := assert.New(t)
 
-		snapshot, _ := cache.NewSnapshot("3",
+		snapshot, _ := cache.NewSnapshot(
+			"3",
 			map[resource.Type][]types.Resource{
 				resource.RateLimitConfigType: {
 					&rls_config.RateLimitConfig{

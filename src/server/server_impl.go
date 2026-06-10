@@ -21,13 +21,14 @@ import (
 
 	"github.com/coocood/freecache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
-	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/gorilla/mux"
 	"github.com/libp2p/go-reuseport"
 	gostats "github.com/lyft/gostats"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+
+	logger "github.com/goatapp/ratelimit/src/log"
 
 	"github.com/goatapp/ratelimit/src/limiter"
 	"github.com/goatapp/ratelimit/src/settings"
@@ -108,7 +109,8 @@ func NewJsonHandler(svc pb.RateLimitServiceServer) func(http.ResponseWriter, *ht
 		}
 
 		// Generate trace
-		_, span := tracer.Start(ctx, "NewJsonHandler Remaining Execution",
+		_, span := tracer.Start(
+			ctx, "NewJsonHandler Remaining Execution",
 			trace.WithAttributes(
 				attribute.String("response", resp.String()),
 			),
@@ -272,7 +274,8 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 		"root of various pprof endpoints. hit for help.",
 		func(writer http.ResponseWriter, request *http.Request) {
 			pprof.Index(writer, request)
-		})
+		},
+	)
 
 	// setup cpu profiling endpoint
 	ret.AddDebugHttpEndpoint(
@@ -280,7 +283,8 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 		"CPU profiling endpoint",
 		func(writer http.ResponseWriter, request *http.Request) {
 			pprof.Profile(writer, request)
-		})
+		},
+	)
 
 	// setup stats endpoint
 	ret.AddDebugHttpEndpoint(
@@ -290,7 +294,8 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 			expvar.Do(func(kv expvar.KeyValue) {
 				io.WriteString(writer, fmt.Sprintf("%s: %s\n", kv.Key, kv.Value))
 			})
-		})
+		},
+	)
 
 	// setup trace endpoint
 	ret.AddDebugHttpEndpoint(
@@ -298,7 +303,8 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 		"trace endpoint",
 		func(writer http.ResponseWriter, request *http.Request) {
 			pprof.Trace(writer, request)
-		})
+		},
+	)
 
 	// setup debug root
 	ret.debugListener.debugMux.HandleFunc(
@@ -312,9 +318,11 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 			sort.Strings(sortedKeys)
 			for _, key := range sortedKeys {
 				io.WriteString(
-					writer, fmt.Sprintf("%s: %s\n", key, ret.debugListener.endpoints[key]))
+					writer, fmt.Sprintf("%s: %s\n", key, ret.debugListener.endpoints[key]),
+				)
 			}
-		})
+		},
+	)
 
 	return ret
 }

@@ -63,12 +63,14 @@ func (this *descriptorsValue) String() string {
 
 func main() {
 	dialString := flag.String(
-		"dial_string", "localhost:8081", "url of ratelimit server in <host>:<port> form")
+		"dial_string", "localhost:8081", "url of ratelimit server in <host>:<port> form",
+	)
 	domain := flag.String("domain", "", "rate limit configuration domain to query")
 	descriptorsValue := descriptorsValue{[]*pb_struct.RateLimitDescriptor{}}
 	flag.Var(
 		&descriptorsValue, "descriptors",
-		"descriptor list to query in <key>=<value>,<key>=<value>,... form")
+		"descriptor list to query in <key>=<value>,<key>=<value>,... form",
+	)
 	oltpProtocol := flag.String("oltp-protocol", "", "protocol to use when exporting tracing span, accept http, grpc or empty (disable tracing) as value, please use OLTP environment variables to set endpoint (refer to README.MD)")
 	grpcServerTlsCACert := flag.String("grpc-server-ca-file", "", "path to the server CA file for TLS connection")
 	grpcUseTLS := flag.Bool("grpc-use-tls", false, "Use TLS for connection to server")
@@ -115,7 +117,8 @@ func main() {
 			Domain:      *domain,
 			Descriptors: desc,
 			HitsAddend:  1,
-		})
+		},
+	)
 	if err != nil {
 		fmt.Printf("request error: %s\n", err.Error())
 		os.Exit(1)

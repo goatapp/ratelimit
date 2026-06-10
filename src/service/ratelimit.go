@@ -20,8 +20,9 @@ import (
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	ratelimitv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
-	logger "github.com/goatapp/ratelimit/src/log"
 	"golang.org/x/net/context"
+
+	logger "github.com/goatapp/ratelimit/src/log"
 
 	"github.com/goatapp/ratelimit/src/assert"
 	"github.com/goatapp/ratelimit/src/config"
@@ -143,7 +144,8 @@ func (this *service) constructLimitsToCheck(request *pb.RateLimitRequest, ctx co
 				if limitsToCheck[i].Unlimited {
 					logger.Debug(context.Background(), "descriptor is unlimited, not passing to the cache")
 				} else {
-					logger.Debug(context.Background(), fmt.Sprintf("applying limit: %d requests per %s, shadow_mode: %t, quota: %t",
+					logger.Debug(context.Background(), fmt.Sprintf(
+						"applying limit: %d requests per %s, shadow_mode: %t, quota: %t",
 						limitsToCheck[i].Limit.RequestsPerUnit,
 						limitsToCheck[i].Limit.Unit.String(),
 						limitsToCheck[i].ShadowMode,

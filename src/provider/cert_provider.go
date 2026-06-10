@@ -7,9 +7,10 @@ import (
 	"path/filepath"
 	"sync"
 
-	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/lyft/goruntime/loader"
 	gostats "github.com/lyft/gostats"
+
+	logger "github.com/goatapp/ratelimit/src/log"
 
 	"github.com/goatapp/ratelimit/src/settings"
 )
@@ -81,7 +82,8 @@ func (p *CertProvider) setupRuntime() {
 		runtimeSubdirectory,
 		p.rootStore.ScopeWithTags("certs", p.settings.ExtraTags),
 		&loader.DirectoryRefresher{},
-		loader.IgnoreDotFiles)
+		loader.IgnoreDotFiles,
+	)
 	if err != nil {
 		logger.Fatal(context.Background(), fmt.Sprintf("Failed to set up goruntime loader: %v", err))
 	}

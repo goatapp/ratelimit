@@ -123,7 +123,8 @@ func (this *rateLimitDescriptor) dump() string {
 	if this.limit != nil {
 		ret += fmt.Sprintf(
 			"%s: unit=%s requests_per_unit=%d, shadow_mode: %t, quota_mode: %t\n", this.limit.FullKey,
-			this.limit.Limit.Unit.String(), this.limit.Limit.RequestsPerUnit, this.limit.ShadowMode, this.limit.QuotaMode)
+			this.limit.Limit.Unit.String(), this.limit.Limit.RequestsPerUnit, this.limit.ShadowMode, this.limit.QuotaMode,
+		)
 	}
 	for _, descriptor := range this.descriptors {
 		ret += descriptor.dump()
@@ -257,7 +258,8 @@ func (this *rateLimitDescriptor) loadDescriptors(config RateLimitConfigToLoad, p
 		newParentKey := parentKey + finalKey
 		if _, present := this.descriptors[finalKey]; present {
 			panic(newRateLimitConfigError(
-				config.Name, fmt.Sprintf("duplicate descriptor composite key '%s'", newParentKey)))
+				config.Name, fmt.Sprintf("duplicate descriptor composite key '%s'", newParentKey),
+			))
 		}
 
 		var rateLimit *RateLimit = nil
@@ -272,12 +274,14 @@ func (this *rateLimitDescriptor) loadDescriptors(config RateLimitConfigToLoad, p
 				if validUnit {
 					panic(newRateLimitConfigError(
 						config.Name,
-						"should not specify rate limit unit when unlimited"))
+						"should not specify rate limit unit when unlimited",
+					))
 				}
 			} else if !validUnit {
 				panic(newRateLimitConfigError(
 					config.Name,
-					fmt.Sprintf("invalid rate limit unit '%s'", descriptorConfig.RateLimit.Unit)))
+					fmt.Sprintf("invalid rate limit unit '%s'", descriptorConfig.RateLimit.Unit),
+				))
 			}
 
 			replaces := make([]string, len(descriptorConfig.RateLimit.Replaces))
@@ -292,7 +296,8 @@ func (this *rateLimitDescriptor) loadDescriptors(config RateLimitConfigToLoad, p
 			)
 			rateLimitDebugString = fmt.Sprintf(
 				" ratelimit={requests_per_unit=%d, unit=%s, unlimited=%t, shadow_mode=%t, quota_mode=%t}", rateLimit.Limit.RequestsPerUnit,
-				rateLimit.Limit.Unit.String(), rateLimit.Unlimited, rateLimit.ShadowMode, rateLimit.QuotaMode)
+				rateLimit.Limit.Unit.String(), rateLimit.Unlimited, rateLimit.ShadowMode, rateLimit.QuotaMode,
+			)
 
 			for _, replaces := range descriptorConfig.RateLimit.Replaces {
 				if replaces.Name == "" {
@@ -309,7 +314,8 @@ func (this *rateLimitDescriptor) loadDescriptors(config RateLimitConfigToLoad, p
 			if !strings.Contains(finalKey, "*") {
 				panic(newRateLimitConfigError(
 					config.Name,
-					fmt.Sprintf("share_threshold can only be used with wildcard values (containing '*'), but found key '%s'", finalKey)))
+					fmt.Sprintf("share_threshold can only be used with wildcard values (containing '*'), but found key '%s'", finalKey),
+				))
 			}
 		}
 
@@ -413,7 +419,8 @@ func (this *rateLimitConfigImpl) loadConfig(config RateLimitConfigToLoad) {
 	if _, present := this.domains[root.Domain]; present {
 		if !this.mergeDomainConfigs {
 			panic(newRateLimitConfigError(
-				config.Name, fmt.Sprintf("duplicate domain '%s' in config file", root.Domain)))
+				config.Name, fmt.Sprintf("duplicate domain '%s' in config file", root.Domain),
+			))
 		}
 
 		logger.Debug(context.Background(), fmt.Sprintf("patching domain: %s", root.Domain))

@@ -162,7 +162,8 @@ func makeRlsConfig() []types.Resource {
 }
 
 func GenerateSnapshot() *cache.Snapshot {
-	snap, _ := cache.NewSnapshot("1",
+	snap, _ := cache.NewSnapshot(
+		"1",
 		map[resource.Type][]types.Resource{
 			resource.RateLimitConfigType: makeRlsConfig(),
 		},

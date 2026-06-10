@@ -3,8 +3,10 @@ package stats
 import (
 	"context"
 	"fmt"
-	logger "github.com/goatapp/ratelimit/src/log"
+
 	gostats "github.com/lyft/gostats"
+
+	logger "github.com/goatapp/ratelimit/src/log"
 
 	"github.com/goatapp/ratelimit/src/stats"
 	"github.com/goatapp/ratelimit/src/utils"
