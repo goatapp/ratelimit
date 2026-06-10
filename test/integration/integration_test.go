@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bradfitz/gomemcache/memcache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/stretchr/testify/assert"
@@ -260,6 +261,10 @@ func TestConfigMemcacheWithMaxIdleConns(t *testing.T) {
 		withDefaultMaxIdleConns := makeSimpleMemcacheSettings(singleNodePort, 0)
 		assert.Equal(2, withDefaultMaxIdleConns.MemcacheMaxIdleConns)
 		t.Run("MemcacheWithDefaultMaxIdleConns", testBasicConfig(withDefaultMaxIdleConns))
+
+		mc := memcache.New("localhost:6394")
+		assert.Nil(mc.FlushAll())
+
 		withSpecifiedMaxIdleConns := makeSimpleMemcacheSettings(singleNodePort, 0)
 		withSpecifiedMaxIdleConns.MemcacheMaxIdleConns = 100
 		t.Run("MemcacheWithSpecifiedMaxIdleConns", testBasicConfig(withSpecifiedMaxIdleConns))
