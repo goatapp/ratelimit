@@ -22,7 +22,7 @@ type Client interface {
 	PipeAppend(pipeline Pipeline, rcv interface{}, cmd string, args ...interface{}) Pipeline
 
 	// PipeScriptAppend append a script command onto the pipeline queue.
-	PipeScriptAppend(pipeline Pipeline, rcv interface{}, script radix.EvalScript, args ...string) Pipeline
+	PipeScriptAppend(pipeline Pipeline, rcv interface{}, script radix.EvalScript, keys []string, args ...string) Pipeline
 
 	// PipeDo writes multiple commands to a Conn in a single write, then reads
 	// their responses in a single read.

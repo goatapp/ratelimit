@@ -104,10 +104,10 @@ func (mr *MockClientMockRecorder) PipeAppend(arg0, arg1, arg2 interface{}, arg3 
 }
 
 // PipeScriptAppend mocks base method
-func (m *MockClient) PipeScriptAppend(arg0 redis.Pipeline, arg1 interface{}, arg2 radix.EvalScript, arg3 ...string) redis.Pipeline {
+func (m *MockClient) PipeScriptAppend(arg0 redis.Pipeline, arg1 interface{}, arg2 radix.EvalScript, arg3 []string, arg4 ...string) redis.Pipeline {
 	m.ctrl.T.Helper()
-	varargs := []interface{}{arg0, arg1, arg2}
-	for _, a := range arg3 {
+	varargs := []interface{}{arg0, arg1, arg2, arg3}
+	for _, a := range arg4 {
 		varargs = append(varargs, a)
 	}
 	ret := m.ctrl.Call(m, "PipeScriptAppend", varargs...)
@@ -116,9 +116,9 @@ func (m *MockClient) PipeScriptAppend(arg0 redis.Pipeline, arg1 interface{}, arg
 }
 
 // PipeScriptAppend indicates an expected call of PipeScriptAppend
-func (mr *MockClientMockRecorder) PipeScriptAppend(arg0, arg1, arg2 interface{}, arg3 ...interface{}) *gomock.Call {
+func (mr *MockClientMockRecorder) PipeScriptAppend(arg0, arg1, arg2, arg3 interface{}, arg4 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{arg0, arg1, arg2}, arg3...)
+	varargs := append([]interface{}{arg0, arg1, arg2, arg3}, arg4...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PipeScriptAppend", reflect.TypeOf((*MockClient)(nil).PipeScriptAppend), varargs...)
 }
 

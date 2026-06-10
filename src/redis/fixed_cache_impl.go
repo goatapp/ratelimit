@@ -25,19 +25,20 @@ import (
 
 var script = `
 -- ARGV[1] = rate limit key
--- ARGV[2] = timestamp key
--- ARGV[3] = tokens per replenish period
--- ARGV[4] = token limit
--- ARGV[5] = replenish period (milliseconds)
--- ARGV[6] = permit count
--- ARGV[7] = current time (unix time milliseconds)
-local limit = tonumber(ARGV[4])
-local rate = tonumber(ARGV[3])
-local period = tonumber(ARGV[5])
-local requested = tonumber(ARGV[6])
-local now = tonumber(ARGV[7])
+-- KEYS[1] = token count key
+-- KEYS[2] = timestamp key
+-- ARGV[1] = tokens per replenish period
+-- ARGV[2] = token limit
+-- ARGV[3] = replenish period (milliseconds)
+-- ARGV[4] = permit count
+-- ARGV[5] = current time (unix time milliseconds)
+local limit = tonumber(ARGV[2])
+local rate = tonumber(ARGV[1])
+local period = tonumber(ARGV[3])
+local requested = tonumber(ARGV[4])
+local now = tonumber(ARGV[5])
 
-local state = redis.call('MGET', ARGV[1], ARGV[2])
+local state = redis.call('MGET', KEYS[1], KEYS[2])
 local current_tokens = tonumber(state[1]) or limit
 local last_refreshed = tonumber(state[2]) or 0
 
@@ -60,8 +61,8 @@ if current_tokens >= requested then
 	local periods_until_full = math.ceil(limit / rate)
 	local ttl = math.ceil(periods_until_full * period)
 
-	redis.call('SET', ARGV[1], current_tokens, 'PXAT', ttl + now)
-	redis.call('SET', ARGV[2], time_of_last_replenishment, 'PXAT', ttl + now)
+	redis.call('SET', KEYS[1], current_tokens, 'PXAT', ttl + now)
+	redis.call('SET', KEYS[2], time_of_last_replenishment, 'PXAT', ttl + now)
 else
 	retry_after = period - (now - time_of_last_replenishment)
 end
@@ -80,9 +81,8 @@ type fixedRateLimitCacheImpl struct {
 }
 
 func pipelineAppendScript(client Client, pipeline *Pipeline, key string, hitsAddend, tokenLimit, tokensPerReplenishPeriod uint32, replenishPeriod, currentTime int64, result *[]int64) {
-	*pipeline = client.PipeScriptAppend(*pipeline, result, evalScript,
-		key,
-		fmt.Sprintf("%s:expires", key),
+	keys := []string{fmt.Sprintf("{%s}", key), fmt.Sprintf("{%s}:expires", key)}
+	*pipeline = client.PipeScriptAppend(*pipeline, result, evalScript, keys,
 		strconv.FormatInt(int64(tokensPerReplenishPeriod), 10),
 		strconv.FormatInt(int64(tokenLimit), 10),
 		strconv.FormatInt(replenishPeriod, 10),
@@ -144,12 +144,12 @@ func (this *fixedRateLimitCacheImpl) DoLimit(
 					if perSecondPipelineToGet == nil {
 						perSecondPipelineToGet = Pipeline{}
 					}
-					pipelineAppendtoGet(this.perSecondClient, &perSecondPipelineToGet, cacheKey.Key, &currentCount[i])
+					pipelineAppendtoGet(this.perSecondClient, &perSecondPipelineToGet, fmt.Sprintf("{%s}", cacheKey.Key), &currentCount[i])
 				} else {
 					if pipelineToGet == nil {
 						pipelineToGet = Pipeline{}
 					}
-					pipelineAppendtoGet(this.client, &pipelineToGet, cacheKey.Key, &currentCount[i])
+					pipelineAppendtoGet(this.client, &pipelineToGet, fmt.Sprintf("{%s}", cacheKey.Key), &currentCount[i])
 				}
 			}
 		}
