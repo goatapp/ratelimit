@@ -209,6 +209,8 @@ func (runner *Runner) Run() {
 	pb.RegisterRateLimitServiceServer(srv.GrpcServer(), service)
 
 	srv.Start(ctx)
+
+	<-ctx.Done()
 }
 
 func (runner *Runner) Stop() {
