@@ -1,15 +1,15 @@
 package provider
 
 import (
-	"fmt"
 	"context"
 	"crypto/tls"
+	"fmt"
 	"path/filepath"
 	"sync"
 
+	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/lyft/goruntime/loader"
 	gostats "github.com/lyft/gostats"
-	logger "github.com/goatapp/ratelimit/src/log"
 
 	"github.com/goatapp/ratelimit/src/settings"
 )

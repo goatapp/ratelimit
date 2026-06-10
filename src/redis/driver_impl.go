@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
+	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/jpillora/backoff"
 	stats "github.com/lyft/gostats"
 	"github.com/mediocregopher/radix/v4"
 	"github.com/mediocregopher/radix/v4/trace"
-	logger "github.com/goatapp/ratelimit/src/log"
 
 	"github.com/goatapp/ratelimit/src/server"
 	"github.com/goatapp/ratelimit/src/utils"
@@ -368,4 +368,3 @@ func (c *clientImpl) PipeDo(ctx context.Context, pipeline Pipeline) error {
 	}
 	return nil
 }
-

@@ -16,9 +16,9 @@
 package memcached
 
 import (
-	"fmt"
 	"context"
 	"crypto/tls"
+	"fmt"
 	"math/rand"
 	"net"
 	"strconv"

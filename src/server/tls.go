@@ -1,10 +1,10 @@
 package server
 
 import (
-	"fmt"
 	"context"
 	"crypto/x509"
 	"errors"
+	"fmt"
 
 	logger "github.com/goatapp/ratelimit/src/log"
 )

@@ -1,16 +1,16 @@
 package godogstats
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
-	gostats "github.com/lyft/gostats"
 	logger "github.com/goatapp/ratelimit/src/log"
+	gostats "github.com/lyft/gostats"
 )
 
 type godogStatsSink struct {

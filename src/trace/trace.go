@@ -1,12 +1,12 @@
 package trace
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 	"sync"
 
-	"github.com/google/uuid"
 	logger "github.com/goatapp/ratelimit/src/log"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/contrib/propagators/b3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"

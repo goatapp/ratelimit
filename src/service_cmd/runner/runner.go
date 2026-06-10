@@ -1,8 +1,8 @@
 package runner
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
@@ -14,8 +14,8 @@ import (
 
 	"github.com/coocood/freecache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
-	gostats "github.com/lyft/gostats"
 	logger "github.com/goatapp/ratelimit/src/log"
+	gostats "github.com/lyft/gostats"
 
 	"github.com/goatapp/ratelimit/src/godogstats"
 	"github.com/goatapp/ratelimit/src/limiter"
@@ -156,7 +156,6 @@ func (runner *Runner) Run() {
 	} else {
 		logger.Info(context.Background(), "Tracing disabled")
 	}
-
 
 	var localCache *freecache.Cache
 	if s.LocalCacheSizeInBytes != 0 {

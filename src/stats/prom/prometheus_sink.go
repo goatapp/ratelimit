@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/go-kit/log"
+	logger "github.com/goatapp/ratelimit/src/log"
 	gostats "github.com/lyft/gostats"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -15,7 +16,6 @@ import (
 	"github.com/prometheus/statsd_exporter/pkg/event"
 	"github.com/prometheus/statsd_exporter/pkg/exporter"
 	"github.com/prometheus/statsd_exporter/pkg/mapper"
-	logger "github.com/goatapp/ratelimit/src/log"
 )
 
 var (

@@ -21,10 +21,10 @@ import (
 
 	"github.com/coocood/freecache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/gorilla/mux"
 	"github.com/libp2p/go-reuseport"
 	gostats "github.com/lyft/gostats"
-	logger "github.com/goatapp/ratelimit/src/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
