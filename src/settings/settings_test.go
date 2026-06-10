@@ -1,13 +1,145 @@
 package settings
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
+const prometheusResponseTimeAsMillisecondsEnv = "PROMETHEUS_RESPONSE_TIME_AS_MILLISECONDS"
+
 func TestSettingsTlsConfigUnmodified(t *testing.T) {
 	settings := NewSettings()
 	assert.NotNil(t, settings.RedisTlsConfig)
 	assert.Nil(t, settings.RedisTlsConfig.RootCAs)
+}
+
+func TestPrometheusResponseTimeAsMillisecondsDefault(t *testing.T) {
+	os.Unsetenv(prometheusResponseTimeAsMillisecondsEnv)
+
+	settings := NewSettings()
+
+	assert.False(t, settings.PrometheusResponseTimeAsMilliseconds)
+}
+
+func TestPrometheusResponseTimeAsMillisecondsEnabled(t *testing.T) {
+	os.Setenv(prometheusResponseTimeAsMillisecondsEnv, "true")
+	defer os.Unsetenv(prometheusResponseTimeAsMillisecondsEnv)
+
+	settings := NewSettings()
+
+	assert.True(t, settings.PrometheusResponseTimeAsMilliseconds)
+}
+
+// Tests for RedisPoolOnEmptyBehavior
+func TestRedisPoolOnEmptyBehavior_Default(t *testing.T) {
+	os.Unsetenv("REDIS_POOL_ON_EMPTY_BEHAVIOR")
+
+	settings := NewSettings()
+
+	assert.Equal(t, "WAIT", settings.RedisPoolOnEmptyBehavior)
+}
+
+func TestRedisPoolOnEmptyBehavior_Error(t *testing.T) {
+	os.Setenv("REDIS_POOL_ON_EMPTY_BEHAVIOR", "ERROR")
+	defer os.Unsetenv("REDIS_POOL_ON_EMPTY_BEHAVIOR")
+
+	settings := NewSettings()
+
+	assert.Equal(t, "ERROR", settings.RedisPoolOnEmptyBehavior)
+}
+
+func TestRedisPoolOnEmptyBehavior_Create(t *testing.T) {
+	os.Setenv("REDIS_POOL_ON_EMPTY_BEHAVIOR", "CREATE")
+	defer os.Unsetenv("REDIS_POOL_ON_EMPTY_BEHAVIOR")
+
+	settings := NewSettings()
+
+	assert.Equal(t, "CREATE", settings.RedisPoolOnEmptyBehavior)
+}
+
+func TestRedisPoolOnEmptyBehavior_Wait(t *testing.T) {
+	os.Setenv("REDIS_POOL_ON_EMPTY_BEHAVIOR", "WAIT")
+	defer os.Unsetenv("REDIS_POOL_ON_EMPTY_BEHAVIOR")
+
+	settings := NewSettings()
+
+	assert.Equal(t, "WAIT", settings.RedisPoolOnEmptyBehavior)
+}
+
+func TestRedisPoolOnEmptyBehavior_CaseInsensitive(t *testing.T) {
+	// Test that lowercase values work (processing is done in driver_impl.go)
+	os.Setenv("REDIS_POOL_ON_EMPTY_BEHAVIOR", "error")
+	defer os.Unsetenv("REDIS_POOL_ON_EMPTY_BEHAVIOR")
+
+	settings := NewSettings()
+
+	// Setting stores as-is, case conversion happens in driver_impl.go
+	assert.Equal(t, "error", settings.RedisPoolOnEmptyBehavior)
+}
+
+// Tests for RedisPerSecondPoolOnEmptyBehavior
+func TestRedisPerSecondPoolOnEmptyBehavior_Default(t *testing.T) {
+	os.Unsetenv("REDIS_PERSECOND_POOL_ON_EMPTY_BEHAVIOR")
+
+	settings := NewSettings()
+
+	assert.Equal(t, "WAIT", settings.RedisPerSecondPoolOnEmptyBehavior)
+}
+
+func TestRedisPerSecondPoolOnEmptyBehavior_Error(t *testing.T) {
+	os.Setenv("REDIS_PERSECOND_POOL_ON_EMPTY_BEHAVIOR", "ERROR")
+	defer os.Unsetenv("REDIS_PERSECOND_POOL_ON_EMPTY_BEHAVIOR")
+
+	settings := NewSettings()
+
+	assert.Equal(t, "ERROR", settings.RedisPerSecondPoolOnEmptyBehavior)
+}
+
+func TestRedisClusterPipelineParallelism_Default(t *testing.T) {
+	os.Unsetenv("REDIS_CLUSTER_PIPELINE_PARALLELISM")
+	os.Unsetenv("REDIS_PERSECOND_CLUSTER_PIPELINE_PARALLELISM")
+
+	settings := NewSettings()
+
+	assert.Equal(t, 1, settings.RedisClusterPipelineParallelism)
+	assert.Equal(t, 1, settings.RedisPerSecondClusterPipelineParallelism)
+}
+
+func TestRedisClusterPipelineParallelism_Configured(t *testing.T) {
+	os.Setenv("REDIS_CLUSTER_PIPELINE_PARALLELISM", "8")
+	os.Setenv("REDIS_PERSECOND_CLUSTER_PIPELINE_PARALLELISM", "4")
+	defer os.Unsetenv("REDIS_CLUSTER_PIPELINE_PARALLELISM")
+	defer os.Unsetenv("REDIS_PERSECOND_CLUSTER_PIPELINE_PARALLELISM")
+
+	settings := NewSettings()
+
+	assert.Equal(t, 8, settings.RedisClusterPipelineParallelism)
+	assert.Equal(t, 4, settings.RedisPerSecondClusterPipelineParallelism)
+}
+
+func TestRedisClusterPipelineParallelism_Auto(t *testing.T) {
+	os.Setenv("REDIS_CLUSTER_PIPELINE_PARALLELISM", "0")
+	defer os.Unsetenv("REDIS_CLUSTER_PIPELINE_PARALLELISM")
+
+	settings := NewSettings()
+
+	assert.Equal(t, 0, settings.RedisClusterPipelineParallelism)
+}
+
+// Test both pools can be configured independently
+func TestRedisPoolOnEmptyBehavior_IndependentConfiguration(t *testing.T) {
+	os.Setenv("REDIS_POOL_ON_EMPTY_BEHAVIOR", "ERROR")
+	os.Setenv("REDIS_PERSECOND_POOL_ON_EMPTY_BEHAVIOR", "CREATE")
+	defer os.Unsetenv("REDIS_POOL_ON_EMPTY_BEHAVIOR")
+	defer os.Unsetenv("REDIS_PERSECOND_POOL_ON_EMPTY_BEHAVIOR")
+
+	settings := NewSettings()
+
+	// Main pool configured for fail-fast
+	assert.Equal(t, "ERROR", settings.RedisPoolOnEmptyBehavior)
+
+	// Per-second pool configured differently
+	assert.Equal(t, "CREATE", settings.RedisPerSecondPoolOnEmptyBehavior)
 }

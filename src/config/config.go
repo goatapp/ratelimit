@@ -4,6 +4,7 @@ import (
 	pb_struct "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 	"golang.org/x/net/context"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/goatapp/ratelimit/src/stats"
 )
@@ -17,14 +18,19 @@ func (e RateLimitConfigError) Error() string {
 
 // Wrapper for an individual rate limit config entry which includes the defined limit and stats.
 type RateLimit struct {
-	FullKey                              string
-	Stats                                stats.RateLimitStats
-	Limit                                *pb.RateLimitResponse_RateLimit
-	Unlimited                            bool
-	ShadowMode                           bool
-	Name                                 string
-	Replaces                             []string
-	IncludeValueInMetricWhenNotSpecified bool
+	FullKey        string
+	Stats          stats.RateLimitStats
+	Limit          *pb.RateLimitResponse_RateLimit
+	Unlimited      bool
+	ShadowMode     bool
+	QuotaMode      bool
+	Name           string
+	Replaces       []string
+	DetailedMetric bool
+	// ShareThresholdKeyPattern is a slice of wildcard patterns for descriptor entries
+	// The slice index corresponds to the descriptor entry index.
+	ShareThresholdKeyPattern []string
+	Metadata                 *structpb.Struct
 }
 
 // Interface for interacting with a loaded rate limit config.

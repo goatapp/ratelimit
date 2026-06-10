@@ -8,12 +8,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof"
-	"os"
-	"os/signal"
 	"sort"
 	"strconv"
 	"sync"
-	"syscall"
 
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
@@ -25,15 +22,15 @@ import (
 	"github.com/coocood/freecache"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 	"github.com/gorilla/mux"
-	reuseport "github.com/kavu/go_reuseport"
-	"github.com/lyft/goruntime/loader"
+	"github.com/libp2p/go-reuseport"
 	gostats "github.com/lyft/gostats"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/goatapp/ratelimit/src/limiter"
 	logger "github.com/goatapp/ratelimit/src/log"
+
+	"github.com/goatapp/ratelimit/src/limiter"
 	"github.com/goatapp/ratelimit/src/settings"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -50,20 +47,28 @@ type serverDebugListener struct {
 	listener  net.Listener
 }
 
+type grpcListenType int
+
+const (
+	tcp              grpcListenType = 0
+	unixDomainSocket grpcListenType = 1
+)
+
 type server struct {
-	httpAddress   string
-	grpcAddress   string
-	debugAddress  string
-	router        *mux.Router
-	grpcServer    *grpc.Server
-	store         gostats.Store
-	scope         gostats.Scope
-	provider      provider.RateLimitConfigProvider
-	runtime       loader.IFace
-	debugListener serverDebugListener
-	httpServer    *http.Server
-	listenerMu    sync.Mutex
-	health        *HealthChecker
+	httpAddress      string
+	grpcAddress      string
+	grpcListenType   grpcListenType
+	debugAddress     string
+	router           *mux.Router
+	grpcServer       *grpc.Server
+	store            gostats.Store
+	scope            gostats.Scope
+	provider         provider.RateLimitConfigProvider
+	debugListener    serverDebugListener
+	httpServer       *http.Server
+	listenerMu       sync.Mutex
+	health           *HealthChecker
+	grpcCertProvider *provider.CertProvider
 }
 
 func (server *server) AddDebugHttpEndpoint(path string, help string, handler http.HandlerFunc) {
@@ -85,42 +90,43 @@ func NewJsonHandler(svc pb.RateLimitServiceServer) func(http.ResponseWriter, *ht
 
 		body, err := io.ReadAll(request.Body)
 		if err != nil {
-			logger.Error(ctx, "", logger.WithError(err))
+			logger.Warn(context.Background(), fmt.Sprintf("error: %s", err.Error()))
 			writeHttpStatus(writer, http.StatusBadRequest)
 			return
 		}
 
 		if err := protojson.Unmarshal(body, &req); err != nil {
-			logger.Error(ctx, "", logger.WithError(err))
+			logger.Warn(context.Background(), fmt.Sprintf("error: %s", err.Error()))
 			writeHttpStatus(writer, http.StatusBadRequest)
 			return
 		}
 
 		resp, err := svc.ShouldRateLimit(ctx, &req)
 		if err != nil {
-			logger.Error(ctx, "", logger.WithError(err))
+			logger.Warn(context.Background(), fmt.Sprintf("error: %s", err.Error()))
 			writeHttpStatus(writer, http.StatusBadRequest)
 			return
 		}
 
 		// Generate trace
-		_, span := tracer.Start(ctx, "NewJsonHandler Remaining Execution",
+		_, span := tracer.Start(
+			ctx, "NewJsonHandler Remaining Execution",
 			trace.WithAttributes(
 				attribute.String("response", resp.String()),
 			),
 		)
 		defer span.End()
 
-		logger.Debug(ctx, fmt.Sprintf("resp:%s", resp))
+		logger.Debug(context.Background(), fmt.Sprintf("resp:%s", resp))
 		if resp == nil {
-			logger.Error(ctx, "nil response")
+			logger.Error(context.Background(), "nil response")
 			writeHttpStatus(writer, http.StatusInternalServerError)
 			return
 		}
 
 		jsonResp, err := protojson.Marshal(resp)
 		if err != nil {
-			logger.Error(ctx, "error marshaling proto3 to json", logger.WithError(err))
+			logger.Error(context.Background(), fmt.Sprintf("error marshaling proto3 to json: %s", err.Error()))
 			writeHttpStatus(writer, http.StatusInternalServerError)
 			return
 		}
@@ -159,17 +165,28 @@ func (server *server) GrpcServer() *grpc.Server {
 	return server.grpcServer
 }
 
-func (server *server) Start() {
-	server.startGrpc()
+func (server *server) Start(ctx context.Context) {
+	go server.startGrpc()
 
-	server.handleGracefulShutdown()
+	server.handleGracefulShutdown(ctx)
 }
 
 func (server *server) startGrpc() {
 	logger.Warn(context.Background(), fmt.Sprintf("Listening for gRPC on '%s'", server.grpcAddress))
-	lis, err := reuseport.Listen("tcp", server.grpcAddress)
+	var lis net.Listener
+	var err error
+
+	switch server.grpcListenType {
+	case tcp:
+		lis, err = reuseport.Listen("tcp", server.grpcAddress)
+	case unixDomainSocket:
+		lis, err = net.Listen("unix", server.grpcAddress)
+	default:
+		logger.Fatal(context.Background(), fmt.Sprintf("Invalid gRPC listen type %v", server.grpcListenType))
+	}
+
 	if err != nil {
-		logger.Fatal(context.Background(), fmt.Sprintf("Failed to listen for gRPC: %v", err))
+		logger.Fatal(context.Background(), fmt.Sprintf("Failed to listen for gRPC on '%s': %v", server.grpcAddress, err))
 	}
 	server.grpcServer.Serve(lis)
 }
@@ -193,6 +210,14 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 
 	ret := new(server)
 
+	// setup stats
+	ret.store = statsManager.GetStatsStore()
+	ret.scope = ret.store.ScopeWithTags(name, s.ExtraTags)
+	ret.store.AddStatGenerator(gostats.NewRuntimeStats(ret.scope.Scope("go")))
+	if localCache != nil {
+		ret.store.AddStatGenerator(limiter.NewLocalCacheStats(localCache, ret.scope.Scope("localcache")))
+	}
+
 	keepaliveOpt := grpc.KeepaliveParams(keepalive.ServerParameters{
 		MaxConnectionAge:      s.GrpcMaxConnectionAge,
 		MaxConnectionAgeGrace: s.GrpcMaxConnectionAgeGrace,
@@ -207,6 +232,10 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 	}
 	if s.GrpcServerUseTLS {
 		grpcServerTlsConfig := s.GrpcServerTlsConfig
+		ret.grpcCertProvider = provider.NewCertProvider(s, ret.store, s.GrpcServerTlsCert, s.GrpcServerTlsKey)
+		// Remove the static certificates and use the provider via the GetCertificate function
+		grpcServerTlsConfig.Certificates = nil
+		grpcServerTlsConfig.GetCertificate = ret.grpcCertProvider.GetCertificateFunc()
 		// Verify client SAN if provided
 		if s.GrpcClientTlsSAN != "" {
 			grpcServerTlsConfig.VerifyPeerCertificate = verifyClient(grpcServerTlsConfig.ClientCAs, s.GrpcClientTlsSAN)
@@ -217,15 +246,14 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 
 	// setup listen addresses
 	ret.httpAddress = net.JoinHostPort(s.Host, strconv.Itoa(s.Port))
-	ret.grpcAddress = net.JoinHostPort(s.GrpcHost, strconv.Itoa(s.GrpcPort))
-	ret.debugAddress = net.JoinHostPort(s.DebugHost, strconv.Itoa(s.DebugPort))
-
-	// setup stats
-	ret.store = statsManager.GetStatsStore()
-	ret.scope = ret.store.ScopeWithTags(stats.GetStatsScope(), s.ExtraTags)
-	if localCache != nil {
-		ret.store.AddStatGenerator(limiter.NewLocalCacheStats(localCache, ret.scope.Scope("localcache")))
+	if s.GrpcUds != "" {
+		ret.grpcAddress = s.GrpcUds
+		ret.grpcListenType = unixDomainSocket
+	} else {
+		ret.grpcAddress = net.JoinHostPort(s.GrpcHost, strconv.Itoa(s.GrpcPort))
+		ret.grpcListenType = tcp
 	}
+	ret.debugAddress = net.JoinHostPort(s.DebugHost, strconv.Itoa(s.DebugPort))
 
 	// setup config provider
 	ret.provider = getProviderImpl(s, statsManager, ret.store)
@@ -246,7 +274,8 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 		"root of various pprof endpoints. hit for help.",
 		func(writer http.ResponseWriter, request *http.Request) {
 			pprof.Index(writer, request)
-		})
+		},
+	)
 
 	// setup cpu profiling endpoint
 	ret.AddDebugHttpEndpoint(
@@ -254,7 +283,8 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 		"CPU profiling endpoint",
 		func(writer http.ResponseWriter, request *http.Request) {
 			pprof.Profile(writer, request)
-		})
+		},
+	)
 
 	// setup stats endpoint
 	ret.AddDebugHttpEndpoint(
@@ -264,7 +294,8 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 			expvar.Do(func(kv expvar.KeyValue) {
 				io.WriteString(writer, fmt.Sprintf("%s: %s\n", kv.Key, kv.Value))
 			})
-		})
+		},
+	)
 
 	// setup trace endpoint
 	ret.AddDebugHttpEndpoint(
@@ -272,7 +303,8 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 		"trace endpoint",
 		func(writer http.ResponseWriter, request *http.Request) {
 			pprof.Trace(writer, request)
-		})
+		},
+	)
 
 	// setup debug root
 	ret.debugListener.debugMux.HandleFunc(
@@ -286,9 +318,11 @@ func newServer(s settings.Settings, name string, statsManager stats.Manager, loc
 			sort.Strings(sortedKeys)
 			for _, key := range sortedKeys {
 				io.WriteString(
-					writer, fmt.Sprintf("%s: %s\n", key, ret.debugListener.endpoints[key]))
+					writer, fmt.Sprintf("%s: %s\n", key, ret.debugListener.endpoints[key]),
+				)
 			}
-		})
+		},
+	)
 
 	return ret
 }
@@ -306,16 +340,11 @@ func (server *server) Stop() {
 	server.provider.Stop()
 }
 
-func (server *server) handleGracefulShutdown() {
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-
+func (server *server) handleGracefulShutdown(ctx context.Context) {
 	go func() {
-		sig := <-sigs
-
-		logger.Info(context.Background(), fmt.Sprintf("Ratelimit server received %v, shutting down gracefully", sig))
+		<-ctx.Done()
+		logger.Info(context.Background(), "Context cancelled, stopping server")
 		server.Stop()
-		os.Exit(0)
 	}()
 }
 

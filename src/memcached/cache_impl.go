@@ -17,8 +17,10 @@ package memcached
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"math/rand"
+	"net"
 	"strconv"
 	"sync"
 	"time"
@@ -34,11 +36,12 @@ import (
 
 	"github.com/bradfitz/gomemcache/memcache"
 
+	logger "github.com/goatapp/ratelimit/src/log"
+
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 
 	"github.com/goatapp/ratelimit/src/config"
 	"github.com/goatapp/ratelimit/src/limiter"
-	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/goatapp/ratelimit/src/settings"
 	"github.com/goatapp/ratelimit/src/srv"
 	"github.com/goatapp/ratelimit/src/utils"
@@ -64,15 +67,15 @@ var _ limiter.RateLimitCache = (*rateLimitMemcacheImpl)(nil)
 func (this *rateLimitMemcacheImpl) DoLimit(
 	ctx context.Context,
 	request *pb.RateLimitRequest,
-	limits []*config.RateLimit) []*pb.RateLimitResponse_DescriptorStatus {
-
+	limits []*config.RateLimit,
+) []*pb.RateLimitResponse_DescriptorStatus {
 	logger.Debug(ctx, "starting cache lookup")
 
 	// request.HitsAddend could be 0 (default value) if not specified by the caller in the Ratelimit request.
-	hitsAddend := utils.Max(1, request.HitsAddend)
+	hitsAddends := utils.GetHitsAddends(request)
 
 	// First build a list of all cache keys that we are actually going to hit.
-	cacheKeys := this.baseRateLimiter.GenerateCacheKeys(request, limits, hitsAddend)
+	cacheKeys := this.baseRateLimiter.GenerateCacheKeys(request, limits, hitsAddends)
 
 	isOverLimitWithLocalCache := make([]bool, len(request.Descriptors))
 
@@ -95,7 +98,8 @@ func (this *rateLimitMemcacheImpl) DoLimit(
 	}
 
 	// Generate trace
-	_, span := tracer.Start(ctx, "Memcached Fetch Execution",
+	_, span := tracer.Start(
+		ctx, "Memcached Fetch Execution",
 		trace.WithAttributes(
 			attribute.Int("keysToGet length", len(keysToGet)),
 		),
@@ -112,34 +116,34 @@ func (this *rateLimitMemcacheImpl) DoLimit(
 	if len(keysToGet) > 0 {
 		memcacheValues, err = this.client.GetMulti(keysToGet)
 		if err != nil {
-			logger.Error(ctx, fmt.Sprintf("Error multi-getting memcache keys (%s)", keysToGet), logger.WithError(err))
+			logger.Error(ctx, fmt.Sprintf("Error multi-getting memcache keys (%s): %s", keysToGet, err))
 		}
 	}
 
 	for i, cacheKey := range cacheKeys {
 
 		rawMemcacheValue, ok := memcacheValues[cacheKey.Key]
-		var limitBeforeIncrease uint32
+		var limitBeforeIncrease uint64
 		if ok {
 			decoded, err := strconv.ParseInt(string(rawMemcacheValue.Value), 10, 32)
 			if err != nil {
 				logger.Error(ctx, fmt.Sprintf("Unexpected non-numeric value in memcached: %v", rawMemcacheValue))
 			} else {
-				limitBeforeIncrease = uint32(decoded)
+				limitBeforeIncrease = uint64(decoded)
 			}
 
 		}
 
-		limitAfterIncrease := limitBeforeIncrease + hitsAddend
+		limitAfterIncrease := limitBeforeIncrease + hitsAddends[i]
 
 		limitInfo := limiter.NewRateLimitInfo(limits[i], limitBeforeIncrease, limitAfterIncrease, 0, 0)
 
 		responseDescriptorStatuses[i] = this.baseRateLimiter.GetResponseDescriptorStatus(ctx, cacheKey.Key,
-			limitInfo, isOverLimitWithLocalCache[i], hitsAddend)
+			limitInfo, isOverLimitWithLocalCache[i], hitsAddends[i])
 	}
 
 	this.waitGroup.Add(1)
-	runAsync(func() { this.increaseAsync(ctx, cacheKeys, isOverLimitWithLocalCache, limits, uint64(hitsAddend)) })
+	runAsync(func() { this.increaseAsync(cacheKeys, isOverLimitWithLocalCache, limits, hitsAddends) })
 	if AutoFlushForIntegrationTests {
 		this.Flush()
 	}
@@ -147,15 +151,16 @@ func (this *rateLimitMemcacheImpl) DoLimit(
 	return responseDescriptorStatuses
 }
 
-func (this *rateLimitMemcacheImpl) increaseAsync(ctx context.Context, cacheKeys []limiter.CacheKey, isOverLimitWithLocalCache []bool,
-	limits []*config.RateLimit, hitsAddend uint64) {
+func (this *rateLimitMemcacheImpl) increaseAsync(cacheKeys []limiter.CacheKey, isOverLimitWithLocalCache []bool,
+	limits []*config.RateLimit, hitsAddends []uint64,
+) {
 	defer this.waitGroup.Done()
 	for i, cacheKey := range cacheKeys {
 		if cacheKey.Key == "" || isOverLimitWithLocalCache[i] {
 			continue
 		}
 
-		_, err := this.client.Increment(cacheKey.Key, hitsAddend)
+		_, err := this.client.Increment(cacheKey.Key, hitsAddends[i])
 		if err == memcache.ErrCacheMiss {
 			expirationSeconds := utils.UnitToDivider(limits[i].Limit.Unit)
 			if this.expirationJitterMaxSeconds > 0 {
@@ -165,23 +170,23 @@ func (this *rateLimitMemcacheImpl) increaseAsync(ctx context.Context, cacheKeys 
 			// Need to add instead of increment.
 			err = this.client.Add(&memcache.Item{
 				Key:        cacheKey.Key,
-				Value:      []byte(strconv.FormatUint(hitsAddend, 10)),
+				Value:      []byte(strconv.FormatUint(hitsAddends[i], 10)),
 				Expiration: int32(expirationSeconds),
 			})
 			if err == memcache.ErrNotStored {
 				// There was a race condition to do this add. We should be able to increment
 				// now instead.
-				_, err := this.client.Increment(cacheKey.Key, hitsAddend)
+				_, err := this.client.Increment(cacheKey.Key, hitsAddends[i])
 				if err != nil {
-					logger.Error(ctx, fmt.Sprintf("Failed to increment key %s after failing to add", cacheKey.Key), logger.WithError(err))
+					logger.Error(context.Background(), fmt.Sprintf("Failed to increment key %s after failing to add: %s", cacheKey.Key, err))
 					continue
 				}
 			} else if err != nil {
-				logger.Error(ctx, fmt.Sprintf("Failed to add key %s", cacheKey.Key), logger.WithError(err))
+				logger.Error(context.Background(), fmt.Sprintf("Failed to add key %s: %s", cacheKey.Key, err))
 				continue
 			}
 		} else if err != nil {
-			logger.Error(ctx, fmt.Sprintf("Failed to increment key %s", cacheKey.Key), logger.WithError(err))
+			logger.Error(context.Background(), fmt.Sprintf("Failed to increment key %s: %s", cacheKey.Key, err))
 			continue
 		}
 	}
@@ -199,7 +204,7 @@ func refreshServersPeriodically(serverList *memcache.ServerList, srv string, d t
 		case <-t.C:
 			err := refreshServers(serverList, srv, resolver)
 			if err != nil {
-				logger.Warn(context.Background(), "failed to refresh memcahce hosts")
+				logger.Warn(context.Background(), "failed to refresh memcache hosts")
 			} else {
 				logger.Debug(context.Background(), "refreshed memcache hosts")
 			}
@@ -221,7 +226,7 @@ func refreshServers(serverList *memcache.ServerList, srv string, resolver srv.Sr
 	return nil
 }
 
-func newMemcachedFromSrv(srv string, d time.Duration, resolver srv.SrvResolver) Client {
+func newMemcachedFromSrv(srv string, d time.Duration, resolver srv.SrvResolver) *memcache.Client {
 	serverList := new(memcache.ServerList)
 	err := refreshServers(serverList, srv, resolver)
 	if err != nil {
@@ -243,15 +248,24 @@ func newMemcachedFromSrv(srv string, d time.Duration, resolver srv.SrvResolver) 
 
 func newMemcacheFromSettings(s settings.Settings) Client {
 	if s.MemcacheSrv != "" && len(s.MemcacheHostPort) > 0 {
-		panic(MemcacheError("Both MEMCADHE_HOST_PORT and MEMCACHE_SRV are set"))
+		panic(MemcacheError("Both MEMCACHE_HOST_PORT and MEMCACHE_SRV are set"))
 	}
+	var client *memcache.Client
 	if s.MemcacheSrv != "" {
 		logger.Debug(context.Background(), fmt.Sprintf("Using MEMCACHE_SRV: %v", s.MemcacheSrv))
-		return newMemcachedFromSrv(s.MemcacheSrv, s.MemcacheSrvRefresh, new(srv.DnsSrvResolver))
+		client = newMemcachedFromSrv(s.MemcacheSrv, s.MemcacheSrvRefresh, new(srv.DnsSrvResolver))
+	} else {
+		logger.Debug(context.Background(), fmt.Sprintf("Using MEMCACHE_HOST_PORT: %v", s.MemcacheHostPort))
+		client = memcache.New(s.MemcacheHostPort...)
 	}
-	logger.Debug(context.Background(), fmt.Sprintf("Usng MEMCACHE_HOST_PORT:: %v", s.MemcacheHostPort))
-	client := memcache.New(s.MemcacheHostPort...)
 	client.MaxIdleConns = s.MemcacheMaxIdleConns
+	if s.MemcacheTls {
+		client.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			var td tls.Dialer
+			td.Config = s.MemcacheTlsConfig
+			return td.DialContext(ctx, network, address)
+		}
+	}
 	return client
 }
 
@@ -290,7 +304,8 @@ func runAsync(task func()) {
 }
 
 func NewRateLimitCacheImpl(client Client, timeSource utils.TimeSource, jitterRand *rand.Rand,
-	expirationJitterMaxSeconds int64, localCache *freecache.Cache, statsManager stats.Manager, nearLimitRatio float32, cacheKeyPrefix string) limiter.RateLimitCache {
+	expirationJitterMaxSeconds int64, localCache *freecache.Cache, statsManager stats.Manager, nearLimitRatio float32, cacheKeyPrefix string,
+) limiter.RateLimitCache {
 	return &rateLimitMemcacheImpl{
 		client:                     client,
 		timeSource:                 timeSource,
@@ -303,7 +318,8 @@ func NewRateLimitCacheImpl(client Client, timeSource utils.TimeSource, jitterRan
 }
 
 func NewRateLimitCacheImplFromSettings(s settings.Settings, timeSource utils.TimeSource, jitterRand *rand.Rand,
-	localCache *freecache.Cache, scope gostats.Scope, statsManager stats.Manager) limiter.RateLimitCache {
+	localCache *freecache.Cache, scope gostats.Scope, statsManager stats.Manager,
+) limiter.RateLimitCache {
 	return NewRateLimitCacheImpl(
 		CollectStats(newMemcacheFromSettings(s), scope.Scope("memcache")),
 		timeSource,

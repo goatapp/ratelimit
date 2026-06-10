@@ -45,16 +45,16 @@ services:
       - USE_STATSD=true
       - STATSD_HOST=statsd
       - STATSD_PORT=9125
-      - LOG_FORMAT=console
-      - LOG_LEVEL=DEBUG
+      - LOG_LEVEL=debug
       - REDIS_SOCKET_TYPE=tcp
       - REDIS_URL=redis:6379
       - RUNTIME_ROOT=/data
       - RUNTIME_SUBDIRECTORY=ratelimit
       - RUNTIME_WATCH_ROOT=false
+      - RESPONSE_DYNAMIC_METADATA=true
 
   envoy-proxy:
-    image: envoyproxy/envoy-dev:latest
+    image: envoyproxy/envoy:dev
     entrypoint: "/usr/local/bin/envoy"
     command:
       - "--service-node proxy"
@@ -92,8 +92,10 @@ services:
       - ratelimit-network
     expose:
       - "9999"
+      - "10001"
     ports:
       - "9999:9999"
+      - "10001:10001"
 
   tester:
     build:

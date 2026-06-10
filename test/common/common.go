@@ -14,38 +14,47 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	pb_struct "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 )
 
 type TestStatSink struct {
-	sync.Mutex
+	mu     sync.Mutex
 	Record map[string]interface{}
 }
 
+func NewTestStatSink() *TestStatSink {
+	return &TestStatSink{
+		mu:     sync.Mutex{},
+		Record: make(map[string]interface{}),
+	}
+}
+
 func (s *TestStatSink) Clear() {
-	s.Lock()
-	s.Record = map[string]interface{}{}
-	s.Unlock()
+	s.mu.Lock()
+	s.Record = make(map[string]interface{})
+	s.mu.Unlock()
 }
 
 func (s *TestStatSink) FlushCounter(name string, value uint64) {
-	s.Lock()
+	s.mu.Lock()
 	s.Record[name] = value
-	s.Unlock()
+	s.mu.Unlock()
 }
 
 func (s *TestStatSink) FlushGauge(name string, value uint64) {
-	s.Lock()
+	s.mu.Lock()
+	fmt.Println("FlushGauge", name, value)
 	s.Record[name] = value
-	s.Unlock()
+	s.mu.Unlock()
 }
 
 func (s *TestStatSink) FlushTimer(name string, value float64) {
-	s.Lock()
+	s.mu.Lock()
 	s.Record[name] = value
-	s.Unlock()
+	s.mu.Unlock()
 }
 
 func NewRateLimitRequest(domain string, descriptors [][][2]string, hitsAddend uint32) *pb.RateLimitRequest {
@@ -56,11 +65,22 @@ func NewRateLimitRequest(domain string, descriptors [][][2]string, hitsAddend ui
 		for _, entry := range descriptor {
 			newDescriptor.Entries = append(
 				newDescriptor.Entries,
-				&pb_struct.RateLimitDescriptor_Entry{Key: entry[0], Value: entry[1]})
+				&pb_struct.RateLimitDescriptor_Entry{Key: entry[0], Value: entry[1]},
+			)
 		}
 		request.Descriptors = append(request.Descriptors, newDescriptor)
 	}
 	request.HitsAddend = hitsAddend
+	return request
+}
+
+func NewRateLimitRequestWithPerDescriptorHitsAddend(domain string, descriptors [][][2]string,
+	hitsAddends []uint64,
+) *pb.RateLimitRequest {
+	request := NewRateLimitRequest(domain, descriptors, 1)
+	for i, hitsAddend := range hitsAddends {
+		request.Descriptors[i].HitsAddend = &wrapperspb.UInt64Value{Value: hitsAddend}
+	}
 	return request
 }
 
@@ -86,7 +106,7 @@ func WaitForTcpPort(ctx context.Context, port int, timeout time.Duration) error 
 	// Wait up to 1s for the redis instance to start accepting connections.
 	for {
 		var d net.Dialer
-		conn, err := d.DialContext(ctx, "tcp", "localhost:"+strconv.Itoa(port))
+		conn, err := d.DialContext(timeoutCtx, "tcp", "localhost:"+strconv.Itoa(port))
 		if err == nil {
 			conn.Close()
 			// TCP connections are working. All is well.

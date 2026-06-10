@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/contrib/propagators/b3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -50,7 +51,7 @@ func InitProductionTraceProvider(protocol string, serviceName string, serviceNam
 	)
 
 	if err != nil {
-		logger.Fatal(context.Background(), "", logger.WithError(err))
+		logger.Fatal(context.Background(), fmt.Sprintf("resource error: %v", err))
 	}
 	// trace if parent contains root span and is sampled
 	// otherwise only trace according to sampling rate
@@ -64,7 +65,7 @@ func InitProductionTraceProvider(protocol string, serviceName string, serviceNam
 		sdktrace.WithResource(resource),
 	)
 	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, b3.New(), propagation.Baggage{}))
 	logger.Info(context.Background(), fmt.Sprintf("TracerProvider initialized with following parameters: protocol: %s, serviceName: %s, serviceNamespace: %s, serviceInstanceId: %s, samplingRate: %f",
 		protocol, serviceName, serviceNamespace, useServiceInstanceId, samplingRate))
 	return tp
@@ -102,7 +103,7 @@ func GetTestSpanExporter() *tracetest.InMemoryExporter {
 		sdktrace.WithSyncer(testSpanExporter),
 	)
 	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, b3.New(), propagation.Baggage{}))
 
 	return testSpanExporter
 }

@@ -3,7 +3,9 @@ package redis_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	stats "github.com/lyft/gostats"
@@ -32,13 +34,14 @@ func expectPanicError(t *testing.T, f assert.PanicTestFunc) (result error) {
 	return
 }
 
-func testNewClientImpl(t *testing.T, implicitPipeline bool) func(t *testing.T) {
+func testNewClientImpl(t *testing.T, pipelineWindow time.Duration, pipelineLimit int) func(t *testing.T) {
 	return func(t *testing.T) {
 		redisAuth := "123"
 		statsStore := stats.NewStore(stats.NewNullSink(), false)
 
+		// Use a short maxElapsedTime so failing connection tests don't hang in retry loops.
 		mkRedisClient := func(auth, addr string) redis.Client {
-			return redis.NewClientImpl(context.Background(), statsStore, false, auth, "tcp", "single", addr, 1, implicitPipeline, nil, false, nil)
+			return redis.NewClientImpl(context.Background(), statsStore, false, auth, "tcp", "single", addr, 1, pipelineWindow, pipelineLimit, nil, false, nil, 10*time.Second, "", "", time.Second, 30*time.Second, 100*time.Millisecond)
 		}
 
 		t.Run("connection refused", func(t *testing.T) {
@@ -65,9 +68,8 @@ func testNewClientImpl(t *testing.T, implicitPipeline bool) func(t *testing.T) {
 
 			redisSrv.RequireAuth(redisAuth)
 
-			assert.PanicsWithError(t, "response returned from Conn: NOAUTH Authentication required.", func() {
-				mkRedisClient("", redisSrv.Addr())
-			})
+			panicErr := expectPanicError(t, func() { mkRedisClient("", redisSrv.Addr()) })
+			assert.Contains(t, panicErr.Error(), "NOAUTH")
 		})
 
 		t.Run("auth pass", func(t *testing.T) {
@@ -102,36 +104,22 @@ func testNewClientImpl(t *testing.T, implicitPipeline bool) func(t *testing.T) {
 			redisSrv.RequireUserAuth(user, pass)
 
 			redisAuth := fmt.Sprintf("%s:invalid-password", user)
-			assert.PanicsWithError(t, "response returned from Conn: WRONGPASS invalid username-password pair", func() {
-				mkRedisClient(redisAuth, redisSrv.Addr())
-			})
-		})
-
-		t.Run("ImplicitPipeliningEnabled() return expected value", func(t *testing.T) {
-			redisSrv := mustNewRedisServer()
-			defer redisSrv.Close()
-
-			client := mkRedisClient("", redisSrv.Addr())
-
-			if implicitPipeline {
-				assert.True(t, client.ImplicitPipeliningEnabled())
-			} else {
-				assert.False(t, client.ImplicitPipeliningEnabled())
-			}
+			panicErr := expectPanicError(t, func() { mkRedisClient(redisAuth, redisSrv.Addr()) })
+			assert.Contains(t, panicErr.Error(), "WRONGPASS")
 		})
 	}
 }
 
 func TestNewClientImpl(t *testing.T) {
-	t.Run("ImplicitPipeliningEnabled", testNewClientImpl(t, true))
-	t.Run("ImplicitPipeliningDisabled", testNewClientImpl(t, false))
+	t.Run("WithPipelineWindow", testNewClientImpl(t, 2*time.Millisecond, 2))
+	t.Run("WithoutPipelineWindow", testNewClientImpl(t, 0, 0))
 }
 
 func TestDoCmd(t *testing.T) {
 	statsStore := stats.NewStore(stats.NewNullSink(), false)
 
 	mkRedisClient := func(addr string) redis.Client {
-		return redis.NewClientImpl(context.Background(), statsStore, false, "", "tcp", "single", addr, 1, false, nil, false, nil)
+		return redis.NewClientImpl(context.Background(), statsStore, false, "", "tcp", "single", addr, 1, 0, 0, nil, false, nil, 10*time.Second, "", "", time.Second, 30*time.Second, 0)
 	}
 
 	t.Run("SETGET ok", func(t *testing.T) {
@@ -171,12 +159,12 @@ func TestDoCmd(t *testing.T) {
 	})
 }
 
-func testPipeDo(t *testing.T, implicitPipeline bool) func(t *testing.T) {
+func testPipeDo(t *testing.T, pipelineWindow time.Duration, pipelineLimit int) func(t *testing.T) {
 	return func(t *testing.T) {
 		statsStore := stats.NewStore(stats.NewNullSink(), false)
 
 		mkRedisClient := func(addr string) redis.Client {
-			return redis.NewClientImpl(context.Background(), statsStore, false, "", "tcp", "single", addr, 1, implicitPipeline, nil, false, nil)
+			return redis.NewClientImpl(context.Background(), statsStore, false, "", "tcp", "single", addr, 1, pipelineWindow, pipelineLimit, nil, false, nil, 10*time.Second, "", "", time.Second, 30*time.Second, 0)
 		}
 
 		t.Run("SETGET ok", func(t *testing.T) {
@@ -219,7 +207,13 @@ func testPipeDo(t *testing.T, implicitPipeline bool) func(t *testing.T) {
 
 			expectErrContainEOF := func(t *testing.T, err error) {
 				assert.NotNil(t, err)
-				assert.Contains(t, err.Error(), "EOF")
+				// radix v4 wraps errors with "response returned from Conn:"
+				// and may return different connection errors (EOF, connection reset, etc)
+				errMsg := err.Error()
+				hasConnectionError := strings.Contains(errMsg, "EOF") ||
+					strings.Contains(errMsg, "connection reset") ||
+					strings.Contains(errMsg, "broken pipe")
+				assert.True(t, hasConnectionError, "expected connection error, got: %s", errMsg)
 			}
 
 			expectErrContainEOF(t, client.PipeDo(context.Background(), client.PipeAppend(redis.Pipeline{}, nil, "GET", "foo")))
@@ -228,6 +222,279 @@ func testPipeDo(t *testing.T, implicitPipeline bool) func(t *testing.T) {
 }
 
 func TestPipeDo(t *testing.T) {
-	t.Run("ImplicitPipeliningEnabled", testPipeDo(t, true))
-	t.Run("ImplicitPipeliningDisabled", testPipeDo(t, false))
+	t.Run("WithPipelineWindow", testPipeDo(t, 10*time.Millisecond, 2))
+	t.Run("WithoutPipelineWindow", testPipeDo(t, 0, 0))
+}
+
+// Tests for pool on-empty behavior
+func TestPoolOnEmptyBehavior(t *testing.T) {
+	statsStore := stats.NewStore(stats.NewNullSink(), false)
+
+	// Helper to create client with specific on-empty behavior
+	mkRedisClientWithBehavior := func(addr, behavior string) redis.Client {
+		return redis.NewClientImpl(context.Background(), statsStore, false, "", "tcp", "single", addr, 1, 0, 0, nil, false, nil, 10*time.Second, behavior, "", time.Second, 30*time.Second, 0)
+	}
+
+	t.Run("default behavior (empty string)", func(t *testing.T) {
+		redisSrv := mustNewRedisServer()
+		defer redisSrv.Close()
+
+		var client redis.Client
+		assert.NotPanics(t, func() {
+			client = mkRedisClientWithBehavior(redisSrv.Addr(), "")
+		})
+		assert.NotNil(t, client)
+
+		// Verify client works
+		var res string
+		assert.Nil(t, client.DoCmd(context.Background(), nil, "SET", "foo", "bar"))
+		assert.Nil(t, client.DoCmd(context.Background(), &res, "GET", "foo"))
+		assert.Equal(t, "bar", res)
+	})
+
+	t.Run("ERROR behavior should panic", func(t *testing.T) {
+		redisSrv := mustNewRedisServer()
+		defer redisSrv.Close()
+
+		// radix v4 does not support ERROR behavior - should panic at startup
+		panicErr := expectPanicError(t, func() {
+			mkRedisClientWithBehavior(redisSrv.Addr(), "ERROR")
+		})
+		assert.Contains(t, panicErr.Error(), "REDIS_POOL_ON_EMPTY_BEHAVIOR=ERROR is not supported in radix v4")
+	})
+
+	t.Run("CREATE behavior should panic", func(t *testing.T) {
+		redisSrv := mustNewRedisServer()
+		defer redisSrv.Close()
+
+		// radix v4 does not support CREATE behavior - should panic at startup
+		panicErr := expectPanicError(t, func() {
+			mkRedisClientWithBehavior(redisSrv.Addr(), "CREATE")
+		})
+		assert.Contains(t, panicErr.Error(), "REDIS_POOL_ON_EMPTY_BEHAVIOR=CREATE is not supported in radix v4")
+	})
+
+	t.Run("WAIT behavior", func(t *testing.T) {
+		redisSrv := mustNewRedisServer()
+		defer redisSrv.Close()
+
+		var client redis.Client
+		assert.NotPanics(t, func() {
+			client = mkRedisClientWithBehavior(redisSrv.Addr(), "WAIT")
+		})
+		assert.NotNil(t, client)
+
+		// Verify client works
+		var res string
+		assert.Nil(t, client.DoCmd(context.Background(), nil, "SET", "test5", "value5"))
+		assert.Nil(t, client.DoCmd(context.Background(), &res, "GET", "test5"))
+		assert.Equal(t, "value5", res)
+	})
+
+	t.Run("case insensitive behavior - lowercase 'error' panics", func(t *testing.T) {
+		redisSrv := mustNewRedisServer()
+		defer redisSrv.Close()
+
+		// Test that lowercase 'error' is treated same as 'ERROR' (case insensitive)
+		panicErr := expectPanicError(t, func() {
+			mkRedisClientWithBehavior(redisSrv.Addr(), "error")
+		})
+		assert.Contains(t, panicErr.Error(), "REDIS_POOL_ON_EMPTY_BEHAVIOR=ERROR is not supported in radix v4")
+	})
+
+	t.Run("case insensitive behavior - lowercase 'create' panics", func(t *testing.T) {
+		redisSrv := mustNewRedisServer()
+		defer redisSrv.Close()
+
+		// Test that lowercase 'create' is treated same as 'CREATE' (case insensitive)
+		panicErr := expectPanicError(t, func() {
+			mkRedisClientWithBehavior(redisSrv.Addr(), "create")
+		})
+		assert.Contains(t, panicErr.Error(), "REDIS_POOL_ON_EMPTY_BEHAVIOR=CREATE is not supported in radix v4")
+	})
+
+	t.Run("case insensitive behavior - lowercase 'wait' works", func(t *testing.T) {
+		redisSrv := mustNewRedisServer()
+		defer redisSrv.Close()
+
+		// Test that lowercase 'wait' is treated same as 'WAIT' (case insensitive)
+		var client redis.Client
+		assert.NotPanics(t, func() {
+			client = mkRedisClientWithBehavior(redisSrv.Addr(), "wait")
+		})
+		assert.NotNil(t, client)
+
+		// Verify client works
+		var res string
+		assert.Nil(t, client.DoCmd(context.Background(), nil, "SET", "test6", "value6"))
+		assert.Nil(t, client.DoCmd(context.Background(), &res, "GET", "test6"))
+		assert.Equal(t, "value6", res)
+	})
+
+	t.Run("unknown behavior falls back to default", func(t *testing.T) {
+		redisSrv := mustNewRedisServer()
+		defer redisSrv.Close()
+
+		// Unknown behavior should not panic, just log warning and use default
+		var client redis.Client
+		assert.NotPanics(t, func() {
+			client = mkRedisClientWithBehavior(redisSrv.Addr(), "UNKNOWN_BEHAVIOR")
+		})
+		assert.NotNil(t, client)
+
+		// Verify client works
+		var res string
+		assert.Nil(t, client.DoCmd(context.Background(), nil, "SET", "test7", "value7"))
+		assert.Nil(t, client.DoCmd(context.Background(), &res, "GET", "test7"))
+		assert.Equal(t, "value7", res)
+	})
+}
+
+func TestNewClientImplSentinel(t *testing.T) {
+	statsStore := stats.NewStore(stats.NewNullSink(), false)
+
+	mkSentinelClient := func(auth, sentinelAuth, url string, useTls bool, timeout time.Duration) redis.Client {
+		// Pass nil for tlsConfig - we can't test TLS without a real TLS server,
+		// but we can verify the code path is executed (logs will show TLS is enabled)
+		// Use a short maxElapsedTime so failing connection tests don't hang in retry loops.
+		return redis.NewClientImpl(context.Background(), statsStore, useTls, auth, "tcp", "sentinel", url, 1, 0, 0, nil, false, nil, timeout, "", sentinelAuth, time.Second, 30*time.Second, 100*time.Millisecond)
+	}
+
+	t.Run("invalid url format - missing sentinel addresses", func(t *testing.T) {
+		panicErr := expectPanicError(t, func() {
+			mkSentinelClient("", "", "mymaster", false, 10*time.Second)
+		})
+		assert.Contains(t, panicErr.Error(), "Expected master name and a list of urls for the sentinels")
+	})
+
+	t.Run("invalid url format - only master name", func(t *testing.T) {
+		panicErr := expectPanicError(t, func() {
+			mkSentinelClient("", "", "mymaster,", false, 10*time.Second)
+		})
+		// Empty sentinel address causes "missing address" error from radix
+		assert.True(t,
+			containsAny(panicErr.Error(), []string{"Expected master name", "missing address"}),
+			"Expected format validation error, got: %s", panicErr.Error())
+	})
+
+	t.Run("connection refused - sentinel not available", func(t *testing.T) {
+		// Use a port that's unlikely to have a sentinel running
+		url := "mymaster,localhost:12345"
+		panicErr := expectPanicError(t, func() {
+			mkSentinelClient("", "", url, false, 1*time.Second)
+		})
+		// Should fail with connection error or timeout
+		assert.NotNil(t, panicErr)
+		assert.True(t,
+			containsAny(panicErr.Error(), []string{"connection refused", "timeout", "no such host", "connect"}),
+			"Expected connection error, got: %s", panicErr.Error())
+	})
+
+	t.Run("sentinel auth password only", func(t *testing.T) {
+		// This will fail to connect, but we're testing that sentinelAuth parameter is accepted
+		// The log output will show "enabling authentication to redis sentinel" which confirms the code path
+		url := "mymaster,localhost:12345"
+		panicErr := expectPanicError(t, func() {
+			mkSentinelClient("", "sentinel-password", url, false, 1*time.Second)
+		})
+		// Should fail with connection error, not auth error (since we can't connect)
+		assert.NotNil(t, panicErr)
+		assert.True(t,
+			containsAny(panicErr.Error(), []string{"connection refused", "timeout", "no such host", "connect"}),
+			"Expected connection error, got: %s", panicErr.Error())
+	})
+
+	t.Run("sentinel auth user:password", func(t *testing.T) {
+		// This will fail to connect, but we're testing that sentinelAuth parameter with user:password format is accepted
+		// The log output will show "enabling authentication to redis sentinel on ... with user sentinel-user"
+		url := "mymaster,localhost:12345"
+		panicErr := expectPanicError(t, func() {
+			mkSentinelClient("", "sentinel-user:sentinel-pass", url, false, 1*time.Second)
+		})
+		// Should fail with connection error, not auth error (since we can't connect)
+		assert.NotNil(t, panicErr)
+		assert.True(t,
+			containsAny(panicErr.Error(), []string{"connection refused", "timeout", "no such host", "connect"}),
+			"Expected connection error, got: %s", panicErr.Error())
+	})
+
+	t.Run("sentinel with timeout", func(t *testing.T) {
+		// Test that timeout parameter is used
+		url := "mymaster,localhost:12345"
+		start := time.Now()
+		panicErr := expectPanicError(t, func() {
+			mkSentinelClient("", "", url, false, 500*time.Millisecond)
+		})
+		duration := time.Since(start)
+		assert.NotNil(t, panicErr)
+		// Timeout should be respected (with some tolerance)
+		assert.True(t, duration < 2*time.Second, "Timeout should be respected, took %v", duration)
+	})
+
+	t.Run("sentinel with multiple addresses", func(t *testing.T) {
+		// Test that multiple sentinel addresses are accepted in URL format
+		url := "mymaster,localhost:12345,localhost:12346,localhost:12347"
+		panicErr := expectPanicError(t, func() {
+			mkSentinelClient("", "", url, false, 1*time.Second)
+		})
+		// Should fail with connection error, not format error
+		assert.NotNil(t, panicErr)
+		assert.NotContains(t, panicErr.Error(), "Expected master name")
+		assert.True(t,
+			containsAny(panicErr.Error(), []string{"connection refused", "timeout", "no such host", "connect"}),
+			"Expected connection error, got: %s", panicErr.Error())
+	})
+
+	t.Run("sentinel with redis auth but no sentinel auth", func(t *testing.T) {
+		// Test that redis auth and sentinel auth are separate
+		// redisAuth is for master/replica, sentinelAuth is for sentinel nodes
+		url := "mymaster,localhost:12345"
+		panicErr := expectPanicError(t, func() {
+			mkSentinelClient("redis-password", "", url, false, 1*time.Second)
+		})
+		// Should fail with connection error (can't test auth without real sentinel)
+		assert.NotNil(t, panicErr)
+		assert.True(t,
+			containsAny(panicErr.Error(), []string{"connection refused", "timeout", "no such host", "connect"}),
+			"Expected connection error, got: %s", panicErr.Error())
+	})
+
+	t.Run("sentinel with TLS enabled", func(t *testing.T) {
+		// Test that TLS configuration is accepted (will fail to connect without real TLS server)
+		// The log output will show "enabling TLS to redis sentinel" which confirms the code path
+		url := "mymaster,localhost:12345"
+		panicErr := expectPanicError(t, func() {
+			mkSentinelClient("", "", url, true, 1*time.Second)
+		})
+		// Should fail with connection/TLS error (can't test TLS without real TLS server)
+		assert.NotNil(t, panicErr)
+		// Error could be connection refused, TLS handshake failure, or timeout
+		assert.True(t,
+			containsAny(panicErr.Error(), []string{"connection refused", "timeout", "no such host", "connect", "tls", "handshake"}),
+			"Expected connection/TLS error, got: %s", panicErr.Error())
+	})
+
+	t.Run("sentinel with TLS and sentinel auth", func(t *testing.T) {
+		// Test that both TLS and sentinel auth can be configured together
+		// The log output will show both TLS and auth messages
+		url := "mymaster,localhost:12345"
+		panicErr := expectPanicError(t, func() {
+			mkSentinelClient("redis-password", "sentinel-password", url, true, 1*time.Second)
+		})
+		// Should fail with connection/TLS error (can't test without real servers)
+		assert.NotNil(t, panicErr)
+		assert.True(t,
+			containsAny(panicErr.Error(), []string{"connection refused", "timeout", "no such host", "connect", "tls", "handshake"}),
+			"Expected connection/TLS error, got: %s", panicErr.Error())
+	})
+}
+
+// Helper function to check if error message contains any of the given strings
+func containsAny(s string, substrs []string) bool {
+	for _, substr := range substrs {
+		if strings.Contains(strings.ToLower(s), strings.ToLower(substr)) {
+			return true
+		}
+	}
+	return false
 }

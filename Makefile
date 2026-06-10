@@ -8,10 +8,14 @@ GIT_REF = $(shell git describe --tags --exact-match 2>/dev/null || git rev-parse
 VERSION ?= $(GIT_REF)
 SHELL := /bin/bash
 BUILDX_PLATFORMS := linux/amd64,linux/arm64/v8
-export GOSTATS_LOGGING_SINK_DISABLED=true
 # Root dir returns absolute path of current directory. It has a trailing "/".
 PROJECT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 export PROJECT_DIR
+ifneq ($(shell docker compose version 2>/dev/null),)
+  DOCKER_COMPOSE=docker compose
+else
+  DOCKER_COMPOSE=docker-compose
+endif
 
 .PHONY: bootstrap
 bootstrap: ;
@@ -143,7 +147,7 @@ docker_multiarch_push: docker_multiarch_image
 
 .PHONY: integration_tests
 integration_tests:
-	docker-compose --project-directory $(PWD)  -f integration-test/docker-compose-integration-test.yml up --build  --exit-code-from tester
+	$(DOCKER_COMPOSE) --project-directory $(PWD)  -f integration-test/docker-compose-integration-test.yml up --build  --exit-code-from tester
 
 .PHONY: precommit_install
 precommit_install:

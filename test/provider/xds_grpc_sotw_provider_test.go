@@ -27,7 +27,8 @@ const (
 )
 
 func TestXdsProvider(t *testing.T) {
-	intSnapshot, _ := cache.NewSnapshot("1",
+	intSnapshot, _ := cache.NewSnapshot(
+		"1",
 		map[resource.Type][]types.Resource{
 			resource.RateLimitConfigType: {
 				&rls_config.RateLimitConfig{
@@ -86,7 +87,7 @@ func testInitialXdsConfig(snapVersion *int, setSnapshotFunc common.SetSnapshotFu
 
 		config, err := configEvent.GetConfig()
 		assert.Nil(err)
-		assert.Equal("foo.k1_v1: unit=MINUTE requests_per_unit=3, shadow_mode: false\n", config.Dump())
+		assert.Equal("foo.k1_v1: unit=MINUTE requests_per_unit=3, shadow_mode: false, quota_mode: false\n", config.Dump())
 	}
 }
 
@@ -95,7 +96,8 @@ func testNewXdsConfigUpdate(snapVersion *int, setSnapshotFunc common.SetSnapshot
 	return func(t *testing.T) {
 		assert := assert.New(t)
 
-		snapshot, _ := cache.NewSnapshot(fmt.Sprint(*snapVersion),
+		snapshot, _ := cache.NewSnapshot(
+			fmt.Sprint(*snapVersion),
 			map[resource.Type][]types.Resource{
 				resource.RateLimitConfigType: {
 					&rls_config.RateLimitConfig{
@@ -122,7 +124,7 @@ func testNewXdsConfigUpdate(snapVersion *int, setSnapshotFunc common.SetSnapshot
 
 		config, err := configEvent.GetConfig()
 		assert.Nil(err)
-		assert.Equal("foo.k2_v2: unit=MINUTE requests_per_unit=5, shadow_mode: false\n", config.Dump())
+		assert.Equal("foo.k2_v2: unit=MINUTE requests_per_unit=5, shadow_mode: false, quota_mode: false\n", config.Dump())
 	}
 }
 
@@ -131,7 +133,8 @@ func testMultiDomainXdsConfigUpdate(snapVersion *int, setSnapshotFunc common.Set
 	return func(t *testing.T) {
 		assert := assert.New(t)
 
-		snapshot, _ := cache.NewSnapshot(fmt.Sprint(*snapVersion),
+		snapshot, _ := cache.NewSnapshot(
+			fmt.Sprint(*snapVersion),
 			map[resource.Type][]types.Resource{
 				resource.RateLimitConfigType: {
 					&rls_config.RateLimitConfig{
@@ -173,8 +176,8 @@ func testMultiDomainXdsConfigUpdate(snapVersion *int, setSnapshotFunc common.Set
 		config, err := configEvent.GetConfig()
 		assert.Nil(err)
 		assert.ElementsMatch([]string{
-			"foo.k1_v1: unit=MINUTE requests_per_unit=10, shadow_mode: false",
-			"bar.k1_v1: unit=MINUTE requests_per_unit=100, shadow_mode: false",
+			"foo.k1_v1: unit=MINUTE requests_per_unit=10, shadow_mode: false, quota_mode: false",
+			"bar.k1_v1: unit=MINUTE requests_per_unit=100, shadow_mode: false, quota_mode: false",
 		}, strings.Split(strings.TrimSuffix(config.Dump(), "\n"), "\n"))
 	}
 }
@@ -184,7 +187,8 @@ func testDeeperLimitsXdsConfigUpdate(snapVersion *int, setSnapshotFunc common.Se
 	return func(t *testing.T) {
 		assert := assert.New(t)
 
-		snapshot, _ := cache.NewSnapshot(fmt.Sprint(*snapVersion),
+		snapshot, _ := cache.NewSnapshot(
+			fmt.Sprint(*snapVersion),
 			map[resource.Type][]types.Resource{
 				resource.RateLimitConfigType: {
 					&rls_config.RateLimitConfig{
@@ -236,6 +240,7 @@ func testDeeperLimitsXdsConfigUpdate(snapVersion *int, setSnapshotFunc common.Se
 											RequestsPerUnit: 15,
 										},
 										ShadowMode: true,
+										QuotaMode:  true,
 									},
 								},
 							},
@@ -266,13 +271,13 @@ func testDeeperLimitsXdsConfigUpdate(snapVersion *int, setSnapshotFunc common.Se
 		config, err := configEvent.GetConfig()
 		assert.Nil(err)
 		assert.ElementsMatch([]string{
-			"foo.k1_v1: unit=MINUTE requests_per_unit=10, shadow_mode: false",
-			"foo.k1_v1.k2: unit=UNKNOWN requests_per_unit=0, shadow_mode: false",
-			"foo.k1_v1.k2_v2: unit=HOUR requests_per_unit=15, shadow_mode: false",
-			"foo.j1_v2: unit=UNKNOWN requests_per_unit=0, shadow_mode: false",
-			"foo.j1_v2.j2: unit=UNKNOWN requests_per_unit=0, shadow_mode: false",
-			"foo.j1_v2.j2_v2: unit=DAY requests_per_unit=15, shadow_mode: true",
-			"bar.k1_v1: unit=MINUTE requests_per_unit=100, shadow_mode: false",
+			"foo.k1_v1: unit=MINUTE requests_per_unit=10, shadow_mode: false, quota_mode: false",
+			"foo.k1_v1.k2: unit=UNKNOWN requests_per_unit=0, shadow_mode: false, quota_mode: false",
+			"foo.k1_v1.k2_v2: unit=HOUR requests_per_unit=15, shadow_mode: false, quota_mode: false",
+			"foo.j1_v2: unit=UNKNOWN requests_per_unit=0, shadow_mode: false, quota_mode: false",
+			"foo.j1_v2.j2: unit=UNKNOWN requests_per_unit=0, shadow_mode: false, quota_mode: false",
+			"foo.j1_v2.j2_v2: unit=DAY requests_per_unit=15, shadow_mode: true, quota_mode: true",
+			"bar.k1_v1: unit=MINUTE requests_per_unit=100, shadow_mode: false, quota_mode: false",
 		}, strings.Split(strings.TrimSuffix(config.Dump(), "\n"), "\n"))
 	}
 }
@@ -281,7 +286,8 @@ func testSameDomainMultipleXdsConfigUpdate(setSnapshotFunc common.SetSnapshotFun
 	return func(t *testing.T) {
 		assert := assert.New(t)
 
-		snapshot, _ := cache.NewSnapshot("3",
+		snapshot, _ := cache.NewSnapshot(
+			"3",
 			map[resource.Type][]types.Resource{
 				resource.RateLimitConfigType: {
 					&rls_config.RateLimitConfig{
@@ -323,8 +329,8 @@ func testSameDomainMultipleXdsConfigUpdate(setSnapshotFunc common.SetSnapshotFun
 		config, err := configEvent.GetConfig()
 		assert.Nil(err)
 		assert.ElementsMatch([]string{
-			"foo.k1_v2: unit=MINUTE requests_per_unit=100, shadow_mode: false",
-			"foo.k1_v1: unit=MINUTE requests_per_unit=10, shadow_mode: false",
+			"foo.k1_v2: unit=MINUTE requests_per_unit=100, shadow_mode: false, quota_mode: false",
+			"foo.k1_v1: unit=MINUTE requests_per_unit=10, shadow_mode: false, quota_mode: false",
 		}, strings.Split(strings.TrimSuffix(config.Dump(), "\n"), "\n"))
 	}
 }

@@ -6,43 +6,92 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
-	"github.com/goatapp/ratelimit/src/metrics"
-	"github.com/goatapp/ratelimit/src/stats"
-	"github.com/goatapp/ratelimit/src/trace"
-
-	gostats "github.com/lyft/gostats"
-	"google.golang.org/grpc/reflection"
-
 	"github.com/coocood/freecache"
-
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
+	gostats "github.com/lyft/gostats"
 
-	"github.com/goatapp/ratelimit/src/limiter"
 	logger "github.com/goatapp/ratelimit/src/log"
+
+	"github.com/goatapp/ratelimit/src/godogstats"
+	"github.com/goatapp/ratelimit/src/limiter"
 	"github.com/goatapp/ratelimit/src/memcached"
+	"github.com/goatapp/ratelimit/src/metrics"
 	"github.com/goatapp/ratelimit/src/redis"
 	"github.com/goatapp/ratelimit/src/server"
 	ratelimit "github.com/goatapp/ratelimit/src/service"
 	"github.com/goatapp/ratelimit/src/settings"
+	"github.com/goatapp/ratelimit/src/stats"
+	"github.com/goatapp/ratelimit/src/stats/prom"
+	"github.com/goatapp/ratelimit/src/trace"
 	"github.com/goatapp/ratelimit/src/utils"
 )
 
 type Runner struct {
-	name         string
-	statsManager stats.Manager
-	settings     settings.Settings
-	srv          server.Server
-	mu           sync.Mutex
+	name            string
+	statsManager    stats.Manager
+	settings        settings.Settings
+	srv             server.Server
+	mu              sync.Mutex
+	ratelimitCloser io.Closer
+	cancel          context.CancelFunc
+	done            chan struct{}
 }
 
 func NewRunner(name string, s settings.Settings) Runner {
+	var store gostats.Store
+
+	switch {
+	case s.DisableStats:
+		logger.Info(context.Background(), "Stats disabled")
+		store = gostats.NewStore(gostats.NewNullSink(), false)
+	case s.UseDogStatsd:
+		if s.UseStatsd || s.UsePrometheus {
+			logger.Fatal(context.Background(), "Error: unable to use more than one stats sink at the same time. Set one of USE_DOG_STATSD, USE_STATSD, USE_PROMETHEUS.")
+		}
+		sink, err := godogstats.NewSink(
+			godogstats.WithStatsdHost(s.StatsdHost),
+			godogstats.WithStatsdPort(s.StatsdPort),
+			godogstats.WithMogrifierFromEnv(s.UseDogStatsdMogrifiers),
+		)
+		if err != nil {
+			logger.Fatal(context.Background(), fmt.Sprintf("Failed to create dogstatsd sink: %v", err))
+		}
+		logger.Info(context.Background(), "Stats initialized for dogstatsd")
+		store = gostats.NewStore(sink, false)
+	case s.UseStatsd:
+		if s.UseDogStatsd || s.UsePrometheus {
+			logger.Fatal(context.Background(), "Error: unable to use more than one stats sink at the same time. Set one of USE_DOG_STATSD, USE_STATSD, USE_PROMETHEUS.")
+		}
+		logger.Info(context.Background(), "Stats initialized for statsd")
+		store = gostats.NewStore(gostats.NewTCPStatsdSink(gostats.WithStatsdHost(s.StatsdHost), gostats.WithStatsdPort(s.StatsdPort)), false)
+	case s.UsePrometheus:
+		if s.UseDogStatsd || s.UseStatsd {
+			logger.Fatal(context.Background(), "Error: unable to use more than one stats sink at the same time. Set one of USE_DOG_STATSD, USE_STATSD, USE_PROMETHEUS.")
+		}
+		logger.Info(context.Background(), "Stats initialized for Prometheus")
+		store = gostats.NewStore(prom.NewPrometheusSink(prom.WithAddr(s.PrometheusAddr),
+			prom.WithPath(s.PrometheusPath), prom.WithMapperYamlPath(s.PrometheusMapperYaml),
+			prom.WithResponseTimeAsMilliseconds(s.PrometheusResponseTimeAsMilliseconds)), false)
+	default:
+		logger.Info(context.Background(), "Stats initialized for stdout")
+		store = gostats.NewStore(gostats.NewLoggingSink(), false)
+	}
+
+	logger.Info(context.Background(), fmt.Sprintf("Stats flush interval: %s", s.StatsFlushInterval))
+
+	go store.Start(time.NewTicker(s.StatsFlushInterval))
+
 	return Runner{
 		name:         name,
-		statsManager: stats.NewStatManager(gostats.NewDefaultStore(), s),
+		statsManager: stats.NewStatManager(store, s),
 		settings:     s,
+		done:         make(chan struct{}),
 	}
 }
 
@@ -50,7 +99,7 @@ func (runner *Runner) GetStatsStore() gostats.Store {
 	return runner.statsManager.GetStatsStore()
 }
 
-func createLimiter(ctx context.Context, srv server.Server, s settings.Settings, localCache *freecache.Cache, statsManager stats.Manager) limiter.RateLimitCache {
+func createLimiter(ctx context.Context, srv server.Server, s settings.Settings, localCache *freecache.Cache, statsManager stats.Manager) (limiter.RateLimitCache, io.Closer) {
 	switch s.BackendType {
 	case "redis", "":
 		return redis.NewRateLimiterCacheImplFromSettings(
@@ -70,20 +119,43 @@ func createLimiter(ctx context.Context, srv server.Server, s settings.Settings, 
 			rand.New(utils.NewLockedSource(time.Now().Unix())),
 			localCache,
 			srv.Scope(),
-			statsManager)
+			statsManager,
+		), &utils.MultiCloser{} // memcache client can't be closed
 	default:
-		logger.Fatal(ctx, fmt.Sprintf("Invalid setting for BackendType: %s", s.BackendType))
+		logger.Fatal(context.Background(), fmt.Sprintf("Invalid setting for BackendType: %s", s.BackendType))
 		panic("This line should not be reachable")
 	}
 }
 
 func (runner *Runner) Run() {
+	defer close(runner.done)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runner.mu.Lock()
+	runner.cancel = cancel
+	runner.mu.Unlock()
+	defer cancel()
+
+	// Set up signal handling for graceful shutdown
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		select {
+		case sig := <-sigs:
+			logger.Info(context.Background(), fmt.Sprintf("Received signal %v, initiating shutdown", sig))
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
 	s := runner.settings
 	if s.TracingEnabled {
 		tp := trace.InitProductionTraceProvider(s.TracingExporterProtocol, s.TracingServiceName, s.TracingServiceNamespace, s.TracingServiceInstanceId, s.TracingSamplingRate)
 		defer func() {
-			if err := tp.Shutdown(context.Background()); err != nil {
-				logger.Error(context.Background(), "Error shutting down tracer provider", logger.WithError(err))
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			if err := tp.Shutdown(shutdownCtx); err != nil {
+				logger.Error(context.Background(), fmt.Sprintf("Error shutting down tracer provider: %v", err))
 			}
 		}()
 	} else {
@@ -102,8 +174,16 @@ func (runner *Runner) Run() {
 	runner.srv = srv
 	runner.mu.Unlock()
 
+	limiter, limiterCloser := createLimiter(ctx, srv, s, localCache, runner.statsManager)
+	runner.ratelimitCloser = limiterCloser
+	defer func() {
+		if err := limiterCloser.Close(); err != nil {
+			logger.Error(context.Background(), fmt.Sprintf("Error closing rate limiter resources: %v", err))
+		}
+	}()
+
 	service := ratelimit.NewService(
-		createLimiter(context.Background(), srv, s, localCache, runner.statsManager),
+		limiter,
 		srv.Provider(),
 		runner.statsManager,
 		srv.HealthChecker(),
@@ -117,10 +197,11 @@ func (runner *Runner) Run() {
 		"/rlconfig",
 		"print out the currently loaded configuration for debugging",
 		func(writer http.ResponseWriter, request *http.Request) {
-			if current, _ := service.GetCurrentConfig(); current != nil {
+			if current, _, _ := service.GetCurrentConfig(); current != nil {
 				io.WriteString(writer, current.Dump())
 			}
-		})
+		},
+	)
 
 	srv.AddJsonHandler(service)
 
@@ -129,17 +210,17 @@ func (runner *Runner) Run() {
 	// v2 proto is no longer supported
 	pb.RegisterRateLimitServiceServer(srv.GrpcServer(), service)
 
-	// allows grpc clients to discover the definition of the server without having the protos
-	reflection.Register(srv.GrpcServer())
+	srv.Start(ctx)
 
-	srv.Start()
+	<-ctx.Done()
 }
 
 func (runner *Runner) Stop() {
 	runner.mu.Lock()
-	srv := runner.srv
+	cancel := runner.cancel
 	runner.mu.Unlock()
-	if srv != nil {
-		srv.Stop()
+	if cancel != nil {
+		cancel()
 	}
+	<-runner.done
 }

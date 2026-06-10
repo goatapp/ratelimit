@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc/metadata"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/resource/v3"
-	"github.com/golang/protobuf/ptypes/any"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
+	"github.com/jpillora/backoff"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -18,8 +19,9 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/goatapp/ratelimit/src/config"
 	logger "github.com/goatapp/ratelimit/src/log"
+
+	"github.com/goatapp/ratelimit/src/config"
 	"github.com/goatapp/ratelimit/src/settings"
 	"github.com/goatapp/ratelimit/src/stats"
 
@@ -67,6 +69,12 @@ func (p *XdsGrpcSotwProvider) Stop() {
 func (p *XdsGrpcSotwProvider) initXdsClient() {
 	logger.Info(context.Background(), "Starting xDS client connection for rate limit configurations")
 	conn := p.initializeAndWatch()
+	b := &backoff.Backoff{
+		Min:    p.settings.XdsClientBackoffInitialInterval,
+		Max:    p.settings.XdsClientBackoffMaxInterval,
+		Factor: p.settings.XdsClientBackoffRandomFactor,
+		Jitter: p.settings.XdsClientBackoffJitter,
+	}
 
 	for retryEvent := range p.connectionRetryChannel {
 		if conn != nil {
@@ -76,14 +84,22 @@ func (p *XdsGrpcSotwProvider) initXdsClient() {
 			logger.Info(context.Background(), "Stopping xDS client watch for rate limit configurations")
 			break
 		}
+		d := p.getJitteredExponentialBackOffDuration(b)
+		logger.Debug(context.Background(), fmt.Sprintf("Sleeping for %s using exponential backoff\n", d))
+		time.Sleep(d)
 		conn = p.initializeAndWatch()
 	}
+}
+
+func (p *XdsGrpcSotwProvider) getJitteredExponentialBackOffDuration(b *backoff.Backoff) time.Duration {
+	logger.Debug(context.Background(), fmt.Sprintf("Retry attempt# %f", b.Attempt()))
+	return b.Duration()
 }
 
 func (p *XdsGrpcSotwProvider) initializeAndWatch() *grpc.ClientConn {
 	conn, err := p.getGrpcConnection()
 	if err != nil {
-		logger.Error(context.Background(), "Error initializing gRPC connection to xDS Management Server", logger.WithError(err))
+		logger.Error(context.Background(), fmt.Sprintf("Error initializing gRPC connection to xDS Management Server: %s", err.Error()))
 		p.retryGrpcConn()
 		return nil
 	}
@@ -98,12 +114,9 @@ func (p *XdsGrpcSotwProvider) watchConfigs() {
 	for {
 		resp, err := p.adsClient.Fetch()
 		if err != nil {
-			logger.Error(context.Background(), "Failed to receive configuration from xDS Management Server", logger.WithError(err))
-			if sotw.IsConnError(err) {
-				p.retryGrpcConn()
-				return
-			}
-			p.adsClient.Nack(err.Error())
+			logger.Error(context.Background(), fmt.Sprintf("Failed to receive configuration from xDS Management Server: %s", err.Error()))
+			p.retryGrpcConn()
+			return
 		} else {
 			logger.Debug(context.Background(), fmt.Sprintf("Response received from xDS Management Server: %v", resp))
 			p.sendConfigs(resp.Resources)
@@ -114,13 +127,23 @@ func (p *XdsGrpcSotwProvider) watchConfigs() {
 func (p *XdsGrpcSotwProvider) getGrpcConnection() (*grpc.ClientConn, error) {
 	backOff := grpc_retry.BackoffLinearWithJitter(p.settings.ConfigGrpcXdsServerConnectRetryInterval, 0.5)
 	logger.Info(context.Background(), fmt.Sprintf("Dialing xDS Management Server: '%s'", p.settings.ConfigGrpcXdsServerUrl))
-	return grpc.Dial(
-		p.settings.ConfigGrpcXdsServerUrl,
+	grpcOptions := []grpc.DialOption{
 		p.getGrpcTransportCredentials(),
 		grpc.WithBlock(),
 		grpc.WithStreamInterceptor(
 			grpc_retry.StreamClientInterceptor(grpc_retry.WithBackoff(backOff)),
-		))
+		),
+	}
+	maxRecvMsgSize := p.settings.XdsClientGrpcOptionsMaxMsgSizeInBytes
+	if maxRecvMsgSize != 0 {
+		logger.Info(context.Background(), fmt.Sprintf("Setting xDS gRPC max receive message size to %d bytes", maxRecvMsgSize))
+		grpcOptions = append(grpcOptions,
+			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxRecvMsgSize)))
+	}
+	return grpc.Dial(
+		p.settings.ConfigGrpcXdsServerUrl,
+		grpcOptions...,
+	)
 }
 
 func (p *XdsGrpcSotwProvider) getGrpcTransportCredentials() grpc.DialOption {
@@ -136,7 +159,7 @@ func (p *XdsGrpcSotwProvider) getGrpcTransportCredentials() grpc.DialOption {
 	return grpc.WithTransportCredentials(credentials.NewTLS(configGrpcXdsTlsConfig))
 }
 
-func (p *XdsGrpcSotwProvider) sendConfigs(resources []*any.Any) {
+func (p *XdsGrpcSotwProvider) sendConfigs(resources []*anypb.Any) {
 	defer func() {
 		if e := recover(); e != nil {
 			p.configUpdateEventChan <- &ConfigUpdateEventImpl{err: e}
@@ -149,7 +172,7 @@ func (p *XdsGrpcSotwProvider) sendConfigs(resources []*any.Any) {
 		confPb := &rls_conf_v3.RateLimitConfig{}
 		err := anypb.UnmarshalTo(res, confPb, proto.UnmarshalOptions{})
 		if err != nil {
-			logger.Error(context.Background(), "Error while unmarshalling config from xDS Management Server", logger.WithError(err))
+			logger.Error(context.Background(), fmt.Sprintf("Error while unmarshalling config from xDS Management Server: %s", err.Error()))
 			p.adsClient.Nack(err.Error())
 			return
 		}

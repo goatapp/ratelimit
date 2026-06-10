@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/goatapp/ratelimit/src/settings"
 	"github.com/goatapp/ratelimit/src/stats"
@@ -17,13 +18,15 @@ import (
 	"github.com/goatapp/ratelimit/src/utils"
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	ratelimitv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/common/ratelimit/v3"
 	pb "github.com/envoyproxy/go-control-plane/envoy/service/ratelimit/v3"
 	"golang.org/x/net/context"
+
+	logger "github.com/goatapp/ratelimit/src/log"
 
 	"github.com/goatapp/ratelimit/src/assert"
 	"github.com/goatapp/ratelimit/src/config"
 	"github.com/goatapp/ratelimit/src/limiter"
-	logger "github.com/goatapp/ratelimit/src/log"
 	"github.com/goatapp/ratelimit/src/provider"
 	"github.com/goatapp/ratelimit/src/redis"
 	"github.com/goatapp/ratelimit/src/server"
@@ -33,23 +36,25 @@ var tracer = otel.Tracer("ratelimit")
 
 type RateLimitServiceServer interface {
 	pb.RateLimitServiceServer
-	GetCurrentConfig() (config.RateLimitConfig, bool)
+	GetCurrentConfig() (config.RateLimitConfig, bool, bool)
 	SetConfig(updateEvent provider.ConfigUpdateEvent, healthyWithAtLeastOneConfigLoad bool)
 }
 
 type service struct {
-	configLock                  sync.RWMutex
-	configUpdateEvent           <-chan provider.ConfigUpdateEvent
-	config                      config.RateLimitConfig
-	cache                       limiter.RateLimitCache
-	stats                       stats.ServiceStats
-	health                      *server.HealthChecker
-	customHeadersEnabled        bool
-	customHeaderLimitHeader     string
-	customHeaderRemainingHeader string
-	customHeaderResetHeader     string
-	customHeaderClock           utils.TimeSource
-	globalShadowMode            bool
+	configLock                     sync.RWMutex
+	configUpdateEvent              <-chan provider.ConfigUpdateEvent
+	config                         config.RateLimitConfig
+	cache                          limiter.RateLimitCache
+	stats                          stats.ServiceStats
+	health                         *server.HealthChecker
+	customHeadersEnabled           bool
+	customHeaderLimitHeader        string
+	customHeaderRemainingHeader    string
+	customHeaderResetHeader        string
+	customHeaderClock              utils.TimeSource
+	globalShadowMode               bool
+	globalQuotaMode                bool
+	responseDynamicMetadataEnabled bool
 }
 
 func (this *service) SetConfig(updateEvent provider.ConfigUpdateEvent, healthyWithAtLeastOneConfigLoad bool) {
@@ -84,6 +89,8 @@ func (this *service) SetConfig(updateEvent provider.ConfigUpdateEvent, healthyWi
 
 	rlSettings := settings.NewSettings()
 	this.globalShadowMode = rlSettings.GlobalShadowMode
+	this.globalQuotaMode = rlSettings.GlobalQuotaMode
+	this.responseDynamicMetadataEnabled = rlSettings.ResponseDynamicMetadata
 
 	if rlSettings.RateLimitResponseHeadersEnabled {
 		this.customHeadersEnabled = true
@@ -119,28 +126,32 @@ func (this *service) constructLimitsToCheck(request *pb.RateLimitRequest, ctx co
 	replacing := make(map[string]bool)
 
 	for i, descriptor := range request.Descriptors {
-		var descriptorEntryStrings []string
-		for _, descriptorEntry := range descriptor.GetEntries() {
-			descriptorEntryStrings = append(
-				descriptorEntryStrings,
-				fmt.Sprintf("(%s=%s)", descriptorEntry.Key, descriptorEntry.Value),
-			)
+		if true {
+			var descriptorEntryStrings []string
+			for _, descriptorEntry := range descriptor.GetEntries() {
+				descriptorEntryStrings = append(
+					descriptorEntryStrings,
+					fmt.Sprintf("(%s=%s)", descriptorEntry.Key, descriptorEntry.Value),
+				)
+			}
+			logger.Debug(context.Background(), fmt.Sprintf("got descriptor: %s", strings.Join(descriptorEntryStrings, ",")))
 		}
-		logger.Debug(ctx, fmt.Sprintf("got descriptor: %s", strings.Join(descriptorEntryStrings, ",")))
-
 		limitsToCheck[i] = snappedConfig.GetLimit(ctx, request.Domain, descriptor)
-		if limitsToCheck[i] == nil {
-			logger.Debug(ctx, "descriptor does not match any limit, no limits applied")
-		} else {
-			if limitsToCheck[i].Unlimited {
-				logger.Debug(ctx, "descriptor is unlimited, not passing to the cache")
+		if true {
+			if limitsToCheck[i] == nil {
+				logger.Debug(context.Background(), "descriptor does not match any limit, no limits applied")
 			} else {
-				logger.Debug(ctx,
-					fmt.Sprintf("applying limit: %d requests per %s, shadow_mode: %t",
+				if limitsToCheck[i].Unlimited {
+					logger.Debug(context.Background(), "descriptor is unlimited, not passing to the cache")
+				} else {
+					logger.Debug(context.Background(), fmt.Sprintf(
+						"applying limit: %d requests per %s, shadow_mode: %t, quota: %t",
 						limitsToCheck[i].Limit.RequestsPerUnit,
 						limitsToCheck[i].Limit.Unit.String(),
 						limitsToCheck[i].ShadowMode,
+						limitsToCheck[i].QuotaMode,
 					))
+				}
 			}
 		}
 
@@ -163,7 +174,9 @@ func (this *service) constructLimitsToCheck(request *pb.RateLimitRequest, ctx co
 		_, exists := replacing[limit.Name]
 		if exists {
 			limitsToCheck[i] = nil
-			logger.Debug(ctx, fmt.Sprintf("replacing %s", limit.Name))
+			if true {
+				logger.Debug(context.Background(), fmt.Sprintf("replacing %s", limit.Name))
+			}
 		}
 	}
 	return limitsToCheck, isUnlimited
@@ -172,24 +185,33 @@ func (this *service) constructLimitsToCheck(request *pb.RateLimitRequest, ctx co
 const MaxUint32 = uint32(1<<32 - 1)
 
 func (this *service) shouldRateLimitWorker(
-	ctx context.Context, request *pb.RateLimitRequest) *pb.RateLimitResponse {
-
+	ctx context.Context, request *pb.RateLimitRequest,
+) *pb.RateLimitResponse {
 	checkServiceErr(request.Domain != "", "rate limit domain must not be empty")
 	checkServiceErr(len(request.Descriptors) != 0, "rate limit descriptor list must not be empty")
 
-	snappedConfig, globalShadowMode := this.GetCurrentConfig()
+	snappedConfig, globalShadowMode, globalQuotaMode := this.GetCurrentConfig()
 	limitsToCheck, isUnlimited := this.constructLimitsToCheck(request, ctx, snappedConfig)
 
+	assert.Assert(len(limitsToCheck) == len(isUnlimited))
+	assert.Assert(len(limitsToCheck) == len(request.Descriptors))
+
 	responseDescriptorStatuses := this.cache.DoLimit(ctx, request, limitsToCheck)
+	logger.Debug(context.Background(), fmt.Sprintf("descriptor statuses: %+v", responseDescriptorStatuses))
 	assert.Assert(len(limitsToCheck) == len(responseDescriptorStatuses))
 
 	response := &pb.RateLimitResponse{}
 	response.Statuses = make([]*pb.RateLimitResponse_DescriptorStatus, len(request.Descriptors))
-	finalCode := pb.RateLimitResponse_OK
 
 	// Keep track of the descriptor which is closest to hit the ratelimit
 	minLimitRemaining := MaxUint32
 	var minimumDescriptor *pb.RateLimitResponse_DescriptorStatus = nil
+
+	// Track quota mode violations for metadata
+	var passedDescriptors []int
+	failedRateLimitDescriptors := 0
+	failedQuotaDescriptors := 0
+	totalQuotaDescriptors := 0
 
 	for i, descriptorStatus := range responseDescriptorStatuses {
 		// Keep track of the descriptor closest to hit the ratelimit
@@ -207,13 +229,30 @@ func (this *service) shouldRateLimitWorker(
 			}
 		} else {
 			response.Statuses[i] = descriptorStatus
+			isQuotaMode := globalQuotaMode || (limitsToCheck[i] != nil && limitsToCheck[i].QuotaMode)
 			if descriptorStatus.Code == pb.RateLimitResponse_OVER_LIMIT {
-				finalCode = descriptorStatus.Code
-
-				minimumDescriptor = descriptorStatus
-				minLimitRemaining = 0
+				if isQuotaMode {
+					failedQuotaDescriptors += 1
+				} else {
+					failedRateLimitDescriptors += 1
+					minimumDescriptor = descriptorStatus
+					minLimitRemaining = 0
+				}
+			} else {
+				// Keep track of the descriptors that have passed
+				passedDescriptors = append(passedDescriptors, i)
+			}
+			if isQuotaMode {
+				totalQuotaDescriptors += 1
 			}
 		}
+	}
+
+	finalCode := pb.RateLimitResponse_OK
+	// The final code is OVER_LIMIT iff at least one rate limit descriptor is over the limit
+	// or all quota descriptors are over the limit.
+	if failedRateLimitDescriptors > 0 || (totalQuotaDescriptors > 0 && totalQuotaDescriptors == failedQuotaDescriptors) {
+		finalCode = pb.RateLimitResponse_OVER_LIMIT
 	}
 
 	// Add Headers if requested
@@ -231,8 +270,106 @@ func (this *service) shouldRateLimitWorker(
 		this.stats.GlobalShadowMode.Inc()
 	}
 
+	// If response dynamic data enabled, set dynamic data on response.
+	if this.responseDynamicMetadataEnabled {
+		response.DynamicMetadata = ratelimitToMetadata(request, passedDescriptors, limitsToCheck)
+	}
+
 	response.OverallCode = finalCode
 	return response
+}
+
+func ratelimitToMetadata(req *pb.RateLimitRequest, passedDescriptors []int, limitsToCheck []*config.RateLimit) *structpb.Struct {
+	fields := make(map[string]*structpb.Value)
+
+	// Domain
+	fields["domain"] = structpb.NewStringValue(req.Domain)
+
+	// Descriptors
+	descriptorsValues := make([]*structpb.Value, 0, len(req.Descriptors))
+	for _, descriptor := range req.Descriptors {
+		s := descriptorToStruct(descriptor)
+		if s == nil {
+			continue
+		}
+		descriptorsValues = append(descriptorsValues, structpb.NewStructValue(s))
+	}
+	fields["descriptors"] = structpb.NewListValue(&structpb.ListValue{
+		Values: descriptorsValues,
+	})
+
+	// HitsAddend
+	if hitsAddend := req.GetHitsAddend(); hitsAddend != 0 {
+		fields["hitsAddend"] = structpb.NewNumberValue(float64(hitsAddend))
+	}
+
+	passedMetadata := &structpb.Struct{Fields: make(map[string]*structpb.Value)}
+	for _, idx := range passedDescriptors {
+		if idx < len(limitsToCheck) {
+			limit := limitsToCheck[idx]
+			if limit != nil && limit.Metadata != nil {
+				mergeMetadata(passedMetadata, limit.Metadata)
+			}
+		}
+	}
+
+	if len(passedMetadata.GetFields()) > 0 {
+		fields["metadata"] = structpb.NewStructValue(passedMetadata)
+	}
+
+	return &structpb.Struct{Fields: fields}
+}
+
+func descriptorToStruct(descriptor *ratelimitv3.RateLimitDescriptor) *structpb.Struct {
+	if descriptor == nil {
+		return nil
+	}
+
+	fields := make(map[string]*structpb.Value)
+
+	// Entries
+	entriesValues := make([]*structpb.Value, 0, len(descriptor.Entries))
+	for _, entry := range descriptor.Entries {
+		val := fmt.Sprintf("%s=%s", entry.GetKey(), entry.GetValue())
+		entriesValues = append(entriesValues, structpb.NewStringValue(val))
+	}
+	fields["entries"] = structpb.NewListValue(&structpb.ListValue{
+		Values: entriesValues,
+	})
+
+	// Limit
+	if descriptor.GetLimit() != nil {
+		fields["limit"] = structpb.NewStringValue(descriptor.Limit.String())
+	}
+
+	// HitsAddend
+	if hitsAddend := descriptor.GetHitsAddend(); hitsAddend != nil {
+		fields["hitsAddend"] = structpb.NewNumberValue(float64(hitsAddend.GetValue()))
+	}
+
+	return &structpb.Struct{Fields: fields}
+}
+
+func mergeMetadata(dest *structpb.Struct, src *structpb.Struct) {
+	if src == nil {
+		return
+	}
+	for k, v := range src.GetFields() {
+		destVal, exists := dest.GetFields()[k]
+		if exists {
+			// If both are structs, merge them recursively
+			if destStruct := destVal.GetStructValue(); destStruct != nil {
+				if srcStruct := v.GetStructValue(); srcStruct != nil {
+					mergeMetadata(destStruct, srcStruct)
+					continue
+				}
+			}
+			// TODO(yanavlasov): add option to overwrite or add if type is a list
+		} else {
+			// Otherwise overwrite or add
+			dest.GetFields()[k] = v
+		}
+	}
 }
 
 func (this *service) rateLimitLimitHeader(descriptor *pb.RateLimitResponse_DescriptorStatus) *core.HeaderValue {
@@ -253,8 +390,8 @@ func (this *service) rateLimitRemainingHeader(descriptor *pb.RateLimitResponse_D
 }
 
 func (this *service) rateLimitResetHeader(
-	descriptor *pb.RateLimitResponse_DescriptorStatus) *core.HeaderValue {
-
+	descriptor *pb.RateLimitResponse_DescriptorStatus,
+) *core.HeaderValue {
 	return &core.HeaderValue{
 		Key:   this.customHeaderResetHeader,
 		Value: strconv.FormatInt(utils.CalculateReset(&descriptor.CurrentLimit.Unit, this.customHeaderClock).GetSeconds(), 10),
@@ -263,10 +400,12 @@ func (this *service) rateLimitResetHeader(
 
 func (this *service) ShouldRateLimit(
 	ctx context.Context,
-	request *pb.RateLimitRequest) (finalResponse *pb.RateLimitResponse, finalError error) {
-
+	request *pb.RateLimitRequest,
+) (finalResponse *pb.RateLimitResponse, finalError error) {
+	logger.Debug(context.Background(), fmt.Sprintf("ShouldRateLimit: %+v", request))
 	// Generate trace
-	_, span := tracer.Start(ctx, "ShouldRateLimit Execution",
+	_, span := tracer.Start(
+		ctx, "ShouldRateLimit Execution",
 		trace.WithAttributes(
 			attribute.String("domain", request.Domain),
 			attribute.String("request string", request.String()),
@@ -280,7 +419,8 @@ func (this *service) ShouldRateLimit(
 			return
 		}
 
-		logger.Debug(ctx, "caught error during call")
+		logger.Debug(context.Background(), fmt.Sprintf("caught error during call: %v", err))
+
 		finalResponse = nil
 		switch t := err.(type) {
 		case redis.RedisError:
@@ -299,20 +439,20 @@ func (this *service) ShouldRateLimit(
 	}()
 
 	response := this.shouldRateLimitWorker(ctx, request)
-	logger.Debug(ctx, "returning normal response")
+	logger.Debug(context.Background(), fmt.Sprintf("returning normal response: %+v", response))
 
 	return response, nil
 }
 
-func (this *service) GetCurrentConfig() (config.RateLimitConfig, bool) {
+func (this *service) GetCurrentConfig() (config.RateLimitConfig, bool, bool) {
 	this.configLock.RLock()
 	defer this.configLock.RUnlock()
-	return this.config, this.globalShadowMode
+	return this.config, this.globalShadowMode, this.globalQuotaMode
 }
 
 func NewService(cache limiter.RateLimitCache, configProvider provider.RateLimitConfigProvider, statsManager stats.Manager,
-	health *server.HealthChecker, clock utils.TimeSource, shadowMode, forceStart bool, healthyWithAtLeastOneConfigLoad bool) RateLimitServiceServer {
-
+	health *server.HealthChecker, clock utils.TimeSource, shadowMode, forceStart bool, healthyWithAtLeastOneConfigLoad bool,
+) RateLimitServiceServer {
 	newService := &service{
 		configLock:        sync.RWMutex{},
 		configUpdateEvent: configProvider.ConfigUpdateEvent(),
@@ -321,6 +461,7 @@ func NewService(cache limiter.RateLimitCache, configProvider provider.RateLimitC
 		stats:             statsManager.NewServiceStats(),
 		health:            health,
 		globalShadowMode:  shadowMode,
+		globalQuotaMode:   false,
 		customHeaderClock: clock,
 	}
 

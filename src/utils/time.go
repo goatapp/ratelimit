@@ -21,7 +21,7 @@ func NewTimeSourceImpl() TimeSource {
 }
 
 func (this *timeSourceImpl) UnixNow() int64 {
-	return time.Now().UnixMilli()
+	return time.Now().Unix()
 }
 
 // rand for jitter.

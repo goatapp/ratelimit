@@ -228,7 +228,6 @@ type scopedFieldsCtxKey struct{}
 
 func (k *scopedFieldsCtxKey) String() string { return "go-services/common/log scoped fields" }
 
-// AddField adds a field to be logged along with the context. If the field already exists, it will be overwritten.
 func AddField(ctx context.Context, key string, value interface{}) context.Context {
 	if key == "" {
 		return ctx
@@ -237,7 +236,6 @@ func AddField(ctx context.Context, key string, value interface{}) context.Contex
 	return AddFields(ctx, LogField{Key: key, Value: value})
 }
 
-// AddFields adds fields to be logged along with the context. If a field already exists, it will be overwritten.
 func AddFields(ctx context.Context, fields ...LogField) context.Context {
 	if len(fields) == 0 {
 		return ctx
@@ -274,12 +272,8 @@ func grpcContextLogParser(ctx context.Context) []LogOption {
 
 	method, ok := grpc.Method(ctx)
 	if ok {
-		// Method looks something like - goat.protos.Api/Rpc
 		splitMethod := strings.Split(method, ".")
-
-		// Get the last value - Api/Rpc
 		method = splitMethod[len(splitMethod)-1]
-		// Do a char replacement to . to properly index - Api.Rpc
 		method = strings.ReplaceAll(method, "/", ".")
 
 		logOptions = append(logOptions, WithValue(pathKey, method))

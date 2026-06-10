@@ -3,6 +3,9 @@
 
 - [Overview](#overview)
 - [Docker Image](#docker-image)
+  - [Distroless Base Image](#distroless-base-image)
+    - [Benefits of Distroless:](#benefits-of-distroless)
+    - [Debugging with Distroless:](#debugging-with-distroless)
 - [Supported Envoy APIs](#supported-envoy-apis)
   - [API Deprecation History](#api-deprecation-history)
 - [Building and Testing](#building-and-testing)
@@ -18,6 +21,8 @@
     - [Replaces](#replaces)
     - [ShadowMode](#shadowmode)
     - [Including detailed metrics for unspecified values](#including-detailed-metrics-for-unspecified-values)
+    - [Including descriptor values in metrics](#including-descriptor-values-in-metrics)
+    - [Sharing thresholds for wildcard matches](#sharing-thresholds-for-wildcard-matches)
     - [Examples](#examples)
       - [Example 1](#example-1)
       - [Example 2](#example-2)
@@ -28,6 +33,8 @@
       - [Example 7](#example-7)
       - [Example 8](#example-8)
       - [Example 9](#example-9)
+      - [Example 10](#example-10)
+      - [Example 11](#example-11)
   - [Loading Configuration](#loading-configuration)
     - [File Based Configuration Loading](#file-based-configuration-loading)
     - [xDS Management Server Based Configuration Loading](#xds-management-server-based-configuration-loading)
@@ -35,6 +42,7 @@
   - [GRPC Keepalive](#grpc-keepalive)
   - [Health-check](#health-check)
     - [Health-check configurations](#health-check-configurations)
+  - [GRPC server](#grpc-server)
 - [Request Fields](#request-fields)
 - [GRPC Client](#grpc-client)
   - [Commandline flags](#commandline-flags)
@@ -43,19 +51,28 @@
   - [Statistics](#statistics)
 - [Statistics](#statistics-1)
   - [Statistics options](#statistics-options)
+  - [DogStatsD](#dogstatsd)
+    - [Example](#example)
+    - [Continued example:](#continued-example)
+  - [Prometheus](#prometheus)
 - [HTTP Port](#http-port)
   - [/json endpoint](#json-endpoint)
 - [Debug Port](#debug-port)
 - [Local Cache](#local-cache)
 - [Redis](#redis)
   - [Redis type](#redis-type)
-  - [Pipelining](#pipelining)
+  - [Connection Pool Settings](#connection-pool-settings)
+    - [Pool Size](#pool-size)
+    - [Connection Timeout](#connection-timeout)
+    - [Pool On-Empty Behavior](#pool-on-empty-behavior)
+    - [Pipelining](#pipelining)
   - [One Redis Instance](#one-redis-instance)
   - [Two Redis Instances](#two-redis-instances)
   - [Health Checking for Redis Active Connection](#health-checking-for-redis-active-connection)
 - [Memcache](#memcache)
 - [Custom headers](#custom-headers)
 - [Tracing](#tracing)
+- [TLS](#tls)
 - [mTLS](#mtls)
 - [Contact](#contact)
 
@@ -73,6 +90,32 @@ decision is then returned to the caller.
 # Docker Image
 
 For every main commit, an image is pushed to [Dockerhub](https://hub.docker.com/r/envoyproxy/ratelimit/tags?page=1&ordering=last_updated). There is currently no versioning (post v1.4.0) and tags are based on commit sha.
+
+## Distroless Base Image
+
+The Docker image uses Google's [distroless](https://github.com/GoogleContainerTools/distroless) base image (`gcr.io/distroless/static-debian12:nonroot`) for enhanced security and minimal attack surface. Distroless images contain only the application and its runtime dependencies, omitting unnecessary OS components like package managers, shells, and other utilities.
+
+The image is pinned to a specific SHA digest for deterministic builds and uses the `nonroot` variant to run as a non-privileged user, following security best practices.
+
+### Benefits of Distroless:
+
+- **Enhanced Security**: Minimal attack surface with no unnecessary components
+- **Smaller Image Size**: Significantly smaller than traditional base images
+- **Reduced Vulnerabilities**: Fewer components means fewer potential security issues
+- **Better Compliance**: Meets security requirements for minimal base images
+- **Non-root Execution**: Runs as a non-privileged user (UID 65532) for enhanced security
+- **Deterministic Builds**: Pinned to specific SHA digest ensures reproducible builds
+
+### Debugging with Distroless:
+
+For debugging purposes, you can use the debug variant of the distroless image:
+
+```dockerfile
+FROM gcr.io/distroless/static-debian12:debug
+COPY --from=build /go/bin/ratelimit /bin/ratelimit
+```
+
+This provides shell access and debugging tools while maintaining the security benefits of distroless.
 
 # Supported Envoy APIs
 
@@ -126,14 +169,13 @@ Support for [v2 rls proto](https://github.com/envoyproxy/data-plane-api/blob/mas
 
 ## Docker-compose setup
 
-The docker-compose setup has three containers: redis, ratelimit-build, and ratelimit. In order to run the docker-compose setup from the root of the repo, run
+The docker-compose setup uses a distroless-based container for the ratelimit service. In order to run the docker-compose setup from the root of the repo, run
 
 ```bash
 docker-compose up
 ```
 
-The ratelimit-build container will build the ratelimit binary. Then via a shared volume the binary will be shared with the ratelimit container. This dual container setup is used in order to use a
-a minimal container to run the application, rather than the heftier container used to build it.
+The ratelimit service is built using the main Dockerfile which uses Google's distroless base image for enhanced security and minimal attack surface. The distroless image contains only the application and its runtime dependencies, omitting unnecessary OS components like package managers and shells.
 
 If you want to run with [two redis instances](#two-redis-instances), you will need to modify
 the docker-compose.yml file to run a second redis container, and change the environment variables
@@ -247,6 +289,8 @@ descriptors:
       requests_per_unit: <see below: required>
     shadow_mode: (optional)
     detailed_metric: (optional)
+    value_to_metric: (optional)
+    share_threshold: (optional)
     descriptors: (optional block)
       - ... (nested repetition of above)
 ```
@@ -300,6 +344,28 @@ There is also a Global Shadow Mode
 Setting the `detailed_metric: true` for a descriptor will extend the metrics that are produced. Normally a descriptor that matches a value that is not explicitly listed in the configuration will from a metrics point-of-view be rolled-up into the base entry. This can be problematic if you want to have those details available for analysis.
 
 NB! This should only be enabled in situations where the potentially large cardinality of metrics that this can lead to is acceptable.
+
+### Including descriptor values in metrics
+
+Setting `value_to_metric: true` (default: `false`) for a descriptor will include the descriptor's runtime value in the metric key, even when the descriptor value is not explicitly defined in the configuration. This allows you to track metrics per descriptor value when the value comes from the runtime request, providing visibility into different rate limit scenarios without needing to pre-define every possible value.
+
+**Note:** If a value is explicitly specified in a descriptor (e.g., `value: "GET"`), that value is always included in the metric key regardless of the `value_to_metric` setting. The `value_to_metric` flag only affects descriptors where the value is not explicitly defined in the configuration.
+
+When combined with wildcard matching, the full runtime value is included in the metric key, not just the wildcard prefix. This feature works independently of `detailed_metric` - when `detailed_metric` is set, it takes precedence and `value_to_metric` is ignored.
+
+### Sharing thresholds for wildcard matches
+
+Setting `share_threshold: true` (default: `false`) for a descriptor with a wildcard value (ending with `*`) allows all values matching that wildcard to share the same rate limit threshold, instead of using isolated thresholds for each matching value.
+
+This is useful when you want to apply a single rate limit across multiple resources that match a wildcard pattern. For example, if you have a rule for `files/*`, both `files/a.pdf` and `files/b.csv` will share the same threshold when `share_threshold: true` is set.
+
+**Important notes:**
+
+- `share_threshold` can only be used with wildcard values (values ending with `*`)
+- When `share_threshold: true` is enabled, all matching values share the same cache key and rate limit counter
+- When `share_threshold: false` (or not set), each matching value has its own isolated threshold
+- When combined with `value_to_metric: true`, the metric key includes the wildcard prefix (the part before `*`) instead of the full runtime value, to reflect that values are sharing a threshold
+- When combined with `detailed_metric: true`, the metric key also includes the wildcard prefix for entries with `share_threshold` enabled
 
 ### Examples
 
@@ -577,12 +643,9 @@ rather than the normal
 
 #### Example 9
 
-Value supports wildcard matching to apply rate-limit for nested endpoints:
+Value supports wildcard matching using `*`, which can appear at any position — trailing, middle, or multiple times. Each `*` matches zero or more characters.
 
-```
-(key_1, value_1): 20 / sec
-(key_1, value_2): 20 / sec
-```
+Trailing wildcard — matches any value starting with the given prefix:
 
 ```yaml
 domain: example9
@@ -593,6 +656,140 @@ descriptors:
       unit: minute
       requests_per_unit: 20
 ```
+
+Matches `value1`, `value2`, `valueXYZ`, etc.
+
+Middle wildcard — matches values with a fixed prefix **and** suffix:
+
+```yaml
+domain: example9
+descriptors:
+  - key: path
+    value: /api/*/action
+    rate_limit:
+      unit: minute
+      requests_per_unit: 20
+```
+
+Matches `/api/123/action`, `/api/user-id/action`. Does not match `/api/123/other`.
+
+Multiple wildcards — each `*` matches an independent segment, in order:
+
+```yaml
+domain: example9
+descriptors:
+  - key: route
+    value: /api/*/resource/*/action
+    rate_limit:
+      unit: minute
+      requests_per_unit: 20
+```
+
+Matches `/api/v1/resource/123/action`, `/api/v2/resource/456/action`.
+
+#### Example 10
+
+Using `value_to_metric: true` to include descriptor values in metrics when values are not explicitly defined in the configuration:
+
+```yaml
+domain: example10
+descriptors:
+  - key: route
+    value_to_metric: true
+    descriptors:
+      - key: http_method
+        value_to_metric: true
+        descriptors:
+          - key: subject_id
+            rate_limit:
+              unit: minute
+              requests_per_unit: 60
+```
+
+With this configuration, requests with different runtime values for `route` and `http_method` will generate separate metrics:
+
+- Request: `route=api`, `http_method=GET`, `subject_id=123`
+- Metric key: `example10.route_api.http_method_GET.subject_id`
+
+- Request: `route=web`, `http_method=POST`, `subject_id=456`
+- Metric key: `example10.route_web.http_method_POST.subject_id`
+
+Without `value_to_metric: true`, both requests would use the same metric key: `example10.route.http_method.subject_id`.
+
+When combined with wildcard matching, the full runtime value is included:
+
+```yaml
+domain: example10_wildcard
+descriptors:
+  - key: user
+    value_to_metric: true
+    descriptors:
+      - key: action
+        value: read*
+        value_to_metric: true
+        descriptors:
+          - key: resource
+            rate_limit:
+              unit: minute
+              requests_per_unit: 100
+```
+
+- Request: `user=alice`, `action=readfile`, `resource=documents`
+- Metric key: `example10_wildcard.user_alice.action_readfile.resource`
+
+Note: When `detailed_metric: true` is set on a descriptor, it takes precedence and `value_to_metric` is ignored for that descriptor.
+
+#### Example 11
+
+Using `share_threshold: true` to share rate limits across wildcard matches:
+
+```yaml
+domain: example11
+descriptors:
+  # With share_threshold: true, all files/* matches share the same threshold
+  - key: files
+    value: files/*
+    share_threshold: true
+    rate_limit:
+      unit: hour
+      requests_per_unit: 10
+
+  # Without share_threshold, each files_no_share/* match has its own isolated threshold
+  - key: files_no_share
+    value: files_no_share/*
+    share_threshold: false
+    rate_limit:
+      unit: hour
+      requests_per_unit: 10
+```
+
+With this configuration:
+
+- Requests for `files/a.pdf`, `files/b.csv`, and `files/c.txt` all share the same threshold of 10 requests per hour
+- If 5 requests are made for `files/a.pdf` and 5 requests for `files/b.csv`, a request for `files/c.txt` will be rate limited (OVER_LIMIT) because the shared threshold of 10 has been reached
+- Requests for `files_no_share/a.pdf` and `files_no_share/b.csv` each have their own isolated threshold of 10 requests per hour
+- If 10 requests are made for `files_no_share/a.pdf` (exhausting its quota), requests for `files_no_share/b.csv` will still be allowed (up to 10 requests)
+
+Combining `share_threshold` with `value_to_metric`:
+
+```yaml
+domain: example11_metrics
+descriptors:
+  - key: route
+    value: api/*
+    share_threshold: true
+    value_to_metric: true
+    descriptors:
+      - key: method
+        rate_limit:
+          unit: minute
+          requests_per_unit: 60
+```
+
+- Request: `route=api/v1`, `method=GET`
+- Metric key: `example11_metrics.route_api.method_GET` (includes the wildcard prefix `api` instead of the full value `api/v1`)
+
+This reflects that all `api/*` routes share the same threshold, while still providing visibility into which API routes are being accessed.
 
 ## Loading Configuration
 
@@ -647,7 +844,19 @@ To enable this behavior set `MERGE_DOMAIN_CONFIG` to `true`.
 xDS Management Server is a gRPC server which implements the [Aggregated Discovery Service (ADS)](https://github.com/envoyproxy/data-plane-api/blob/97b6dae39046f7da1331a4dc57830d20e842fc26/envoy/service/discovery/v3/ads.proto).
 The xDS Management server serves [Discovery Response](https://github.com/envoyproxy/data-plane-api/blob/97b6dae39046f7da1331a4dc57830d20e842fc26/envoy/service/discovery/v3/discovery.proto#L69) with [Ratelimit Configuration Resources](api/ratelimit/config/ratelimit/v3/rls_conf.proto)
 and with Type URL `"type.googleapis.com/ratelimit.config.ratelimit.v3.RateLimitConfig"`.
+
 The xDS client in the Rate limit service configure Rate limit service with the provided configuration.
+In case of connection failures, the xDS Client retries the connection to the xDS server with exponential backoff and the backoff parameters are configurable.
+
+1. `XDS_CLIENT_BACKOFF_JITTER`: set to `"true"` to add jitter to the exponential backoff.
+2. `XDS_CLIENT_BACKOFF_INITIAL_INTERVAL`: The base amount of time the xDS client waits before retrying the connection after failure. Default: "10s"
+3. `XDS_CLIENT_BACKOFF_MAX_INTERVAL`: The max backoff interval is the upper limit on the amount of time the xDS client will wait between retries. After reaching the max backoff interval, the next retries will continue using the max interval. Default: "60s"
+4. `XDS_CLIENT_BACKOFF_RANDOM_FACTOR`: This is a factor by which the initial interval is multiplied to calculate the next backoff interval. Default: "0.5"
+
+The followings are the gRPC connection options.
+
+1. `XDS_CLIENT_MAX_MSG_SIZE_IN_BYTES`: The maximum message size in bytes that the xDS client can receive.
+
 For more information on xDS protocol please refer to the [envoy proxy documentation](https://www.envoyproxy.io/docs/envoy/latest/api-docs/xds_protocol).
 
 You can refer to [the sample xDS configuration management server](examples/xds-sotw-config-server/README.md).
@@ -682,6 +891,8 @@ time="2020-09-10T17:22:35Z" level=debug msg="loading domain: messaging"
 time="2020-09-10T17:22:35Z" level=debug msg="loading descriptor: key=messaging.message_type_marketing"
 time="2020-09-10T17:22:35Z" level=debug msg="loading descriptor: key=messaging.message_type_marketing.to_number ratelimit={requests_per_unit=5, unit=DAY}"
 time="2020-09-10T17:22:35Z" level=debug msg="loading descriptor: key=messaging.to_number ratelimit={requests_per_unit=100, unit=DAY}"
+time="2020-09-10T17:21:55Z" level=warning msg="Listening for debug on ':6070'"
+time="2020-09-10T17:21:55Z" level=warning msg="Listening for HTTP on ':8080'"
 time="2020-09-10T17:21:55Z" level=debug msg="waiting for runtime update"
 time="2020-09-10T17:21:55Z" level=warning msg="Listening for gRPC on ':8081'"
 ```
@@ -699,6 +910,8 @@ Output example:
 {"@message":"loading descriptor: key=messaging.message_type_marketing","@timestamp":"2020-09-10T17:22:44.926019315Z","level":"debug"}
 {"@message":"loading descriptor: key=messaging.message_type_marketing.to_number ratelimit={requests_per_unit=5, unit=DAY}","@timestamp":"2020-09-10T17:22:44.926037174Z","level":"debug"}
 {"@message":"loading descriptor: key=messaging.to_number ratelimit={requests_per_unit=100, unit=DAY}","@timestamp":"2020-09-10T17:22:44.926048993Z","level":"debug"}
+{"@message":"Listening for debug on ':6070'","@timestamp":"2020-09-10T17:22:44.926113905Z","level":"warning"}
+{"@message":"Listening for gRPC on ':8081'","@timestamp":"2020-09-10T17:22:44.926182006Z","level":"warning"}
 {"@message":"Listening for HTTP on ':8080'","@timestamp":"2020-09-10T17:22:44.926227031Z","level":"warning"}
 {"@message":"waiting for runtime update","@timestamp":"2020-09-10T17:22:44.926267808Z","level":"debug"}
 ```
@@ -735,6 +948,13 @@ HEALTHY_WITH_AT_LEAST_ONE_CONFIG_LOADED default:"false"`
 
 If `HEALTHY_WITH_AT_LEAST_ONE_CONFIG_LOADED` is enabled then health check will start as unhealthy and becomes healthy if
 it detects at least one domain is loaded with the config. If it detects no config again then it will change to unhealthy.
+
+## GRPC server
+
+By default the ratelimit gRPC server binds to `0.0.0.0:8081`. To change this set
+`GRPC_HOST` and/or `GRPC_PORT`. If you want to run the server on a unix domain
+socket then set `GRPC_UDS`, e.g. `GRPC_UDS=/<dir>/ratelimit.sock` and leave
+`GRPC_HOST` and `GRPC_PORT` unmodified.
 
 # Request Fields
 
@@ -775,6 +995,14 @@ There is an additional service-level statistics generated that will increment wh
 The rate limit service generates various statistics for each configured rate limit rule that will be useful for end
 users both for visibility and for setting alarms. Ratelimit uses [gostats](https://github.com/lyft/gostats) as its statistics library. Please refer
 to [gostats' documentation](https://godoc.org/github.com/lyft/gostats) for more information on the library.
+
+Statistics default to using [StatsD](https://github.com/statsd/statsd) and configured via the env vars from [gostats](https://github.com/lyft/gostats).
+
+To output statistics to stdout instead, set env var `USE_STATSD` to `false`
+
+Configure statistics output frequency with `STATS_FLUSH_INTERVAL`, where the type is `time.Duration`, e.g. `10s` is the default value.
+
+To disable statistics entirely, set env var `DISABLE_STATS` to `true`
 
 Rate Limit Statistic Path:
 
@@ -817,6 +1045,162 @@ ratelimit.service.rate_limit.messaging.auth-service.over_limit.shadow_mode: 1
 ## Statistics options
 
 1. `EXTRA_TAGS`: set to `"<k1:v1>,<k2:v2>"` to tag all emitted stats with the provided tags. You might want to tag build commit or release version, for example.
+
+## DogStatsD
+
+To enable dogstatsd integration set:
+
+1. `USE_DOG_STATSD`: `true` to use [DogStatsD](https://docs.datadoghq.com/developers/dogstatsd/?code-lang=go)
+
+dogstatsd also enables so called `mogrifiers` which can
+convert from traditional stats tags into a combination of stat name and tags.
+
+To enable mogrifiers, set a comma-separated list of them in `DOG_STATSD_MOGRIFIERS`.
+
+e.g. `USE_DOG_STATSD_MOGRIFIERS`: `FOO,BAR`
+
+For each mogrifier, define variables that declare the mogrification
+
+1. `DOG_STATSD_MOGRIFIERS_%s_PATTERN`: The regex pattern to match on
+2. `DOG_STATSD_MOGRIFIERS_%s_NAME`: The name of the metric to emit. Can contain variables.
+3. `DOG_STATSD_MOGRIFIERS_%s_TAGS`: Comma-separated list of tags to emit. Can contain variables.
+
+Variables within mogrifiers are strings such as `$1`, `$2`, `$3` which can be used to reference
+a match group from the regex pattern.
+
+### Example
+
+In the example below we will set mogrifier DOMAIN to adjust
+`some.original.metric.TAG` to `some.original.metric` with tag `domain:TAG`
+
+First enable a single mogrifier:
+
+1. `USE_DOG_STATSD_MOGRIFIERS`: `DOMAIN`
+
+Then, declare the rules for the `DOMAIN` modifier:
+
+1. `DOG_STATSD_MOGRIFIER_DOMAIN_PATTERN`: `^some\.original\.metric\.(.*)$`
+2. `DOG_STATSD_MOGRIFIER_DOMAIN_NAME`: `some.original.metric`
+3. `DOG_STATSD_MOGRIFIER_DOMAIN_TAGS`: `domain:$1`
+
+### Continued example:
+
+Let's also set another mogrifier which outputs the hits metrics with a domain and descriptor tag
+
+First, enable an extra mogrifier:
+
+1. `USE_DOG_STATSD_MOGRIFIERS`: `DOMAIN,HITS`
+
+Then, declare additional rules for the `DESCRIPTOR` mogrifier
+
+1. `DOG_STATSD_MOGRIFIER_HITS_PATTERN`: `^ratelimit\.service\.rate_limit\.([^.]+)\.(.*)\.([^.]+)$`
+2. `DOG_STATSD_MOGRIFIER_HITS_NAME`: `ratelimit.service.rate_limit.$3`
+3. `DOG_STATSD_MOGRIFIER_HITS_TAGS`: `domain:$1,descriptor:$2`
+
+## Prometheus
+
+To enable Prometheus integration set:
+
+1. `USE_PROMETHEUS`: `true` to use [Prometheus](https://prometheus.io/)
+2. `PROMETHEUS_ADDR`: The port to listen on for Prometheus metrics. Defaults to `:9090`
+3. `PROMETHEUS_PATH`: The path to listen on for Prometheus metrics. Defaults to `/metrics`
+4. `PROMETHEUS_MAPPER_YAML`: The path to the YAML file that defines the mapping from statsd to prometheus metrics.
+5. `PROMETHEUS_RESPONSE_TIME_AS_MILLISECONDS`: `true` to keep the legacy millisecond behavior for `ratelimit_server.*.response_time` in the built-in mapper. Ignored when `PROMETHEUS_MAPPER_YAML` is set.
+
+Define the mapping from statsd to prometheus metrics in a YAML file.
+Find more information about the mapping in the [Metric Mapping and Configuration](https://github.com/prometheus/statsd_exporter?tab=readme-ov-file#metric-mapping-and-configuration).
+The default setting is:
+
+```yaml
+mappings: # Requires statsd exporter >= v0.6.0 since it uses the "drop" action.
+  - match: "ratelimit.service.rate_limit.*.*.near_limit"
+    name: "ratelimit_service_rate_limit_near_limit"
+    timer_type: "histogram"
+    labels:
+      domain: "$1"
+      key1: "$2"
+  - match: "ratelimit.service.rate_limit.*.*.over_limit"
+    name: "ratelimit_service_rate_limit_over_limit"
+    timer_type: "histogram"
+    labels:
+      domain: "$1"
+      key1: "$2"
+  - match: "ratelimit.service.rate_limit.*.*.total_hits"
+    name: "ratelimit_service_rate_limit_total_hits"
+    timer_type: "histogram"
+    labels:
+      domain: "$1"
+      key1: "$2"
+  - match: "ratelimit.service.rate_limit.*.*.within_limit"
+    name: "ratelimit_service_rate_limit_within_limit"
+    timer_type: "histogram"
+    labels:
+      domain: "$1"
+      key1: "$2"
+
+  - match: "ratelimit.service.rate_limit.*.*.*.near_limit"
+    name: "ratelimit_service_rate_limit_near_limit"
+    timer_type: "histogram"
+    labels:
+      domain: "$1"
+      key1: "$2"
+      key2: "$3"
+  - match: "ratelimit.service.rate_limit.*.*.*.over_limit"
+    name: "ratelimit_service_rate_limit_over_limit"
+    timer_type: "histogram"
+    labels:
+      domain: "$1"
+      key1: "$2"
+      key2: "$3"
+  - match: "ratelimit.service.rate_limit.*.*.*.total_hits"
+    name: "ratelimit_service_rate_limit_total_hits"
+    timer_type: "histogram"
+    labels:
+      domain: "$1"
+      key1: "$2"
+      key2: "$3"
+  - match: "ratelimit.service.rate_limit.*.*.*.within_limit"
+    name: "ratelimit_service_rate_limit_within_limit"
+    timer_type: "histogram"
+    labels:
+      domain: "$1"
+      key1: "$2"
+      key2: "$3"
+
+  - match: "ratelimit.service.call.should_rate_limit.*"
+    name: "ratelimit_service_should_rate_limit_error"
+    match_metric_type: counter
+    labels:
+      err_type: "$1"
+
+  - match: "ratelimit_server.*.total_requests"
+    name: "ratelimit_service_total_requests"
+    match_metric_type: counter
+    labels:
+      grpc_method: "$1"
+
+  - match: "ratelimit_server.*.response_time"
+    name: "ratelimit_service_response_time_seconds"
+    timer_type: histogram
+    scale: 0.001
+    labels:
+      grpc_method: "$1"
+
+  - match: "ratelimit.service.config_load_success"
+    name: "ratelimit_service_config_load_success"
+    match_metric_type: counter
+  - match: "ratelimit.service.config_load_error"
+    name: "ratelimit_service_config_load_error"
+    match_metric_type: counter
+
+  - match: "ratelimit.service.rate_limit.*.*.*.shadow_mode"
+    name: "ratelimit_service_rate_limit_shadow_mode"
+    timer_type: "histogram"
+    labels:
+      domain: "$1"
+      key1: "$2"
+      key2: "$3"
+```
 
 # HTTP Port
 
@@ -898,8 +1282,9 @@ As well Ratelimit supports TLS connections and authentication. These can be conf
 1. `REDIS_TLS` & `REDIS_PERSECOND_TLS`: set to `"true"` to enable a TLS connection for the specific connection type.
 1. `REDIS_TLS_CLIENT_CERT`, `REDIS_TLS_CLIENT_KEY`, and `REDIS_TLS_CACERT` to provides files to specify a TLS connection configuration to Redis server that requires client certificate verification. (This is effective when `REDIS_TLS` or `REDIS_PERSECOND_TLS` is set to to `"true"`).
 1. `REDIS_TLS_SKIP_HOSTNAME_VERIFICATION` set to `"true"` will skip hostname verification in environments where the certificate has an invalid hostname, such as GCP Memorystore.
-1. `REDIS_AUTH` & `REDIS_PERSECOND_AUTH`: set to `"password"` to enable password-only authentication to the redis host.
-1. `REDIS_AUTH` & `REDIS_PERSECOND_AUTH`: set to `"username:password"` to enable username-password authentication to the redis host.
+1. `REDIS_AUTH` & `REDIS_PERSECOND_AUTH`: set to `"password"` to enable password-only authentication to the Redis master/replica nodes.
+1. `REDIS_AUTH` & `REDIS_PERSECOND_AUTH`: set to `"username:password"` to enable username-password authentication to the Redis master/replica nodes.
+1. `REDIS_SENTINEL_AUTH` & `REDIS_PERSECOND_SENTINEL_AUTH`: set to `"password"` or `"username:password"` to enable authentication to Redis Sentinel nodes. This is separate from `REDIS_AUTH`/`REDIS_PERSECOND_AUTH` which authenticate to the Redis master/replica nodes. Only used when `REDIS_TYPE` or `REDIS_PERSECOND_TYPE` is set to `"sentinel"`. If not set, no authentication will be attempted when connecting to Sentinel nodes.
 1. `CACHE_KEY_PREFIX`: a string to prepend to all cache keys
 
 For controlling the behavior of cache key incrementation when any of them is already over the limit, you can use the following configuration:
@@ -922,18 +1307,43 @@ The deployment type can be specified with the `REDIS_TYPE` / `REDIS_PERSECOND_TY
 1. "sentinel": A comma separated list with the first string as the master name of the sentinel cluster followed by hostname:port pairs. The list size should be >= 2. The first item is the name of the master and the rest are the sentinels.
 1. "cluster": A comma separated list of hostname:port pairs with all the nodes in the cluster.
 
-## Pipelining
+## Connection Pool Settings
+
+### Pool Size
+
+1. `REDIS_POOL_SIZE`: the number of connections to keep in the pool. Default: `10`
+1. `REDIS_PERSECOND_POOL_SIZE`: pool size for per-second Redis. Default: `10`
+
+### Connection Timeout
+
+Controls the maximum duration for Redis connection establishment, read operations, and write operations.
+
+1. `REDIS_TIMEOUT`: sets the timeout for Redis connection and I/O operations. Default: `10s`
+1. `REDIS_PERSECOND_TIMEOUT`: sets the timeout for per-second Redis connection and I/O operations. Default: `10s`
+
+### Pool On-Empty Behavior
+
+Controls what happens when all connections in the pool are in use and a new request arrives.
+
+1. `REDIS_POOL_ON_EMPTY_BEHAVIOR`: controls what happens when the pool is empty. Default: `CREATE`
+   - `CREATE`: create a new overflow connection after waiting for `REDIS_POOL_ON_EMPTY_WAIT_DURATION`. This is the [default radix behavior](https://github.com/mediocregopher/radix/blob/v3.8.1/pool.go#L291-L312).
+   - `ERROR`: return an error after waiting for `REDIS_POOL_ON_EMPTY_WAIT_DURATION`. This enforces a strict pool size limit.
+   - `WAIT`: block until a connection becomes available. This enforces a strict pool size limit but may cause goroutine buildup.
+1. `REDIS_POOL_ON_EMPTY_WAIT_DURATION`: the duration to wait before taking the configured action (`CREATE` or `ERROR`). Default: `1s`
+1. `REDIS_PERSECOND_POOL_ON_EMPTY_BEHAVIOR`: same as above for per-second Redis pool. Default: `CREATE`
+1. `REDIS_PERSECOND_POOL_ON_EMPTY_WAIT_DURATION`: same as above for per-second Redis pool. Default: `1s`
+
+### Pipelining
 
 By default, for each request, ratelimit will pick up a connection from pool, write multiple redis commands in a single write then reads their responses in a single read. This reduces network delay.
 
-For high throughput scenarios, ratelimit also support [implicit pipelining](https://github.com/mediocregopher/radix/blob/v3.5.1/pool.go#L238) . It can be configured using the following environment variables:
+For high throughput scenarios, ratelimit supports write buffering via [radix v4's WriteFlushInterval](https://pkg.go.dev/github.com/mediocregopher/radix/v4#Dialer). It can be configured using the following environment variables:
 
-1. `REDIS_PIPELINE_WINDOW` & `REDIS_PERSECOND_PIPELINE_WINDOW`: sets the duration after which internal pipelines will be flushed.
-   If window is zero then implicit pipelining will be disabled.
-1. `REDIS_PIPELINE_LIMIT` & `REDIS_PERSECOND_PIPELINE_LIMIT`: sets maximum number of commands that can be pipelined before flushing.
-   If limit is zero then no limit will be used and pipelines will only be limited by the specified time window.
+1. `REDIS_PIPELINE_WINDOW` & `REDIS_PERSECOND_PIPELINE_WINDOW`: controls how often buffered writes are flushed to the network connection. When set to a non-zero value (e.g., 150us-500us), radix v4 will buffer multiple concurrent write operations and flush them together, reducing system calls and improving throughput. If zero, each write is flushed immediately. **Required for Redis Cluster mode.**
+1. `REDIS_PIPELINE_LIMIT` & `REDIS_PERSECOND_PIPELINE_LIMIT`: **DEPRECATED** - These settings have no effect in radix v4. Write buffering is controlled solely by the window settings above.
+1. `REDIS_CLUSTER_PIPELINE_PARALLELISM` & `REDIS_PERSECOND_CLUSTER_PIPELINE_PARALLELISM`: controls per-key pipeline group concurrency in Redis Cluster mode. Default: `1`, which preserves the legacy serial behavior. Set to `0` for auto parallelism bounded by the corresponding Redis pool size, or a value greater than `1` to bound concurrent Redis group calls per pipeline execution. Configured values greater than the corresponding Redis pool size are capped to the pool size.
 
-`implicit pipelining` is disabled by default. To enable it, you can use default values [used by radix](https://github.com/mediocregopher/radix/blob/v3.5.1/pool.go#L278) and tune for the optimal value.
+Write buffering is disabled by default (window = 0). For optimal performance, set `REDIS_PIPELINE_WINDOW` to 150us-500us depending on your latency requirements and load patterns.
 
 ## One Redis Instance
 
@@ -980,6 +1390,9 @@ To configure a Memcache instance use the following environment variables instead
 1. `BACKEND_TYPE=memcache`
 1. `CACHE_KEY_PREFIX`: a string to prepend to all cache keys
 1. `MEMCACHE_MAX_IDLE_CONNS=2`: the maximum number of idle TCP connections per memcache node, `2` is the default of the underlying library
+1. `MEMCACHE_TLS`: set to `"true"` to connect to the server with TLS.
+1. `MEMCACHE_TLS_CLIENT_CERT`, `MEMCACHE_TLS_CLIENT_KEY`, and `MEMCACHE_TLS_CACERT` to provide files that parameterize the memcache client TLS connection configuration.
+1. `MEMCACHE_TLS_SKIP_HOSTNAME_VERIFICATION` set to `"true"` will skip hostname verification in environments where the certificate has an invalid hostname.
 
 With memcache mode increments will happen asynchronously, so it's technically possible for
 a client to exceed quota briefly if multiple requests happen at exactly the same time.
@@ -1024,17 +1437,26 @@ otelcol-contrib --config examples/otlp-collector/config.yaml
 docker run -d --name jaeger -p 16686:16686 -p 14250:14250 jaegertracing/all-in-one:1.33
 ```
 
+# TLS
+
+Ratelimit supports TLS for it's gRPC endpoint.
+
+The following environment variables control the TLS feature:
+
+1. `GRPC_SERVER_USE_TLS` - Enables gRPC connections to server over TLS
+1. `GRPC_SERVER_TLS_CERT` - Path to the file containing the server cert chain
+1. `GRPC_SERVER_TLS_KEY` - Path to the file containing the server private key
+
+Ratelimit uses [goruntime](https://github.com/lyft/goruntime) to watch the TLS certificate and key and will hot reload them on changes.
+
 # mTLS
 
 Ratelimit supports mTLS when Envoy sends requests to the service.
 
-The following environment variables control the mTLS feature:
+TLS must be enabled on the gRPC endpoint in order for mTLS to work see [TLS](#TLS).
 
 The following variables can be set to enable mTLS on the Ratelimit service.
 
-1. `GRPC_SERVER_USE_TLS` - Enables gprc connections to server over TLS
-1. `GRPC_SERVER_TLS_CERT` - Path to the file containing the server cert chain
-1. `GRPC_SERVER_TLS_KEY` - Path to the file containing the server private key
 1. `GRPC_CLIENT_TLS_CACERT` - Path to the file containing the client CA certificate.
 1. `GRPC_CLIENT_TLS_SAN` - (Optional) DNS Name to validate from the client cert during mTLS auth
 

@@ -8,6 +8,7 @@ import (
 	gostats "github.com/lyft/gostats"
 
 	logger "github.com/goatapp/ratelimit/src/log"
+
 	"github.com/goatapp/ratelimit/src/settings"
 	"github.com/goatapp/ratelimit/src/utils"
 )
@@ -56,6 +57,13 @@ func (this *ManagerImpl) NewStats(key string) RateLimitStats {
 	ret.OverLimitWithLocalCache = this.rlStatsScope.NewCounter(key + ".over_limit_with_local_cache")
 	ret.WithinLimit = this.rlStatsScope.NewCounter(key + ".within_limit")
 	ret.ShadowMode = this.rlStatsScope.NewCounter(key + ".shadow_mode")
+	return ret
+}
+
+func (this *ManagerImpl) NewDomainStats(domain string) DomainStats {
+	ret := DomainStats{}
+	domain = utils.SanitizeStatName(domain)
+	ret.NotFound = this.rlStatsScope.NewCounter(domain + ".domain_not_found")
 	return ret
 }
 

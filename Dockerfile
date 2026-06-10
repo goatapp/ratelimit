@@ -1,4 +1,4 @@
-FROM golang:1.21.5@sha256:672a2286da3ee7a854c3e0a56e0838918d0dbb1c18652992930293312de898a6 AS build
+FROM golang:1.26.4@sha256:68cb6d68bed024785b69195b89af7ac7a444f27791435f98647edff595aa0479 AS build
 WORKDIR /ratelimit
 
 ENV GOPROXY=https://proxy.golang.org
@@ -10,6 +10,6 @@ COPY script script
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /go/bin/ratelimit -ldflags="-w -s" -v github.com/goatapp/ratelimit/src/service_cmd
 
-FROM alpine:3.18.5@sha256:34871e7290500828b39e22294660bee86d966bc0017544e848dd9a255cdf59e0 AS final
-RUN apk --no-cache add ca-certificates && apk --no-cache update
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:e8a4044e0b4ae4257efa45fc026c0bc30ad320d43bd4c1a7d5271bd241e386d0
 COPY --from=build /go/bin/ratelimit /bin/ratelimit
+ENTRYPOINT ["/bin/ratelimit"]

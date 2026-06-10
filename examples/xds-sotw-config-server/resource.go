@@ -93,7 +93,8 @@ func makeRlsConfig() []types.Resource {
 					},
 					Descriptors: []*rls_config.RateLimitDescriptor{
 						{
-							Key: "bar",
+							Key:            "bar",
+							DetailedMetric: true,
 							RateLimit: &rls_config.RateLimitPolicy{
 								Unit:            rls_config.RateLimitUnit_MINUTE,
 								RequestsPerUnit: 3,
@@ -161,7 +162,8 @@ func makeRlsConfig() []types.Resource {
 }
 
 func GenerateSnapshot() *cache.Snapshot {
-	snap, _ := cache.NewSnapshot("1",
+	snap, _ := cache.NewSnapshot(
+		"1",
 		map[resource.Type][]types.Resource{
 			resource.RateLimitConfigType: makeRlsConfig(),
 		},

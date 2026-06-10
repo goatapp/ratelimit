@@ -9,36 +9,35 @@ import (
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
-
 	radix "github.com/mediocregopher/radix/v4"
 
 	redis "github.com/goatapp/ratelimit/src/redis"
 )
 
-// MockClient is a mock of Client interface.
+// MockClient is a mock of Client interface
 type MockClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockClientMockRecorder
 }
 
-// MockClientMockRecorder is the mock recorder for MockClient.
+// MockClientMockRecorder is the mock recorder for MockClient
 type MockClientMockRecorder struct {
 	mock *MockClient
 }
 
-// NewMockClient creates a new mock instance.
+// NewMockClient creates a new mock instance
 func NewMockClient(ctrl *gomock.Controller) *MockClient {
 	mock := &MockClient{ctrl: ctrl}
 	mock.recorder = &MockClientMockRecorder{mock}
 	return mock
 }
 
-// EXPECT returns an object that allows the caller to indicate expected use.
+// EXPECT returns an object that allows the caller to indicate expected use
 func (m *MockClient) EXPECT() *MockClientMockRecorder {
 	return m.recorder
 }
 
-// Close mocks base method.
+// Close mocks base method
 func (m *MockClient) Close() error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Close")
@@ -46,13 +45,13 @@ func (m *MockClient) Close() error {
 	return ret0
 }
 
-// Close indicates an expected call of Close.
+// Close indicates an expected call of Close
 func (mr *MockClientMockRecorder) Close() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Close", reflect.TypeOf((*MockClient)(nil).Close))
 }
 
-// DoCmd mocks base method.
+// DoCmd mocks base method
 func (m *MockClient) DoCmd(arg0 context.Context, arg1 interface{}, arg2 string, arg3 ...interface{}) error {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{arg0, arg1, arg2}
@@ -64,28 +63,14 @@ func (m *MockClient) DoCmd(arg0 context.Context, arg1 interface{}, arg2 string, 
 	return ret0
 }
 
-// DoCmd indicates an expected call of DoCmd.
+// DoCmd indicates an expected call of DoCmd
 func (mr *MockClientMockRecorder) DoCmd(arg0, arg1, arg2 interface{}, arg3 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0, arg1, arg2}, arg3...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DoCmd", reflect.TypeOf((*MockClient)(nil).DoCmd), varargs...)
 }
 
-// ImplicitPipeliningEnabled mocks base method.
-func (m *MockClient) ImplicitPipeliningEnabled() bool {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ImplicitPipeliningEnabled")
-	ret0, _ := ret[0].(bool)
-	return ret0
-}
-
-// ImplicitPipeliningEnabled indicates an expected call of ImplicitPipeliningEnabled.
-func (mr *MockClientMockRecorder) ImplicitPipeliningEnabled() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ImplicitPipeliningEnabled", reflect.TypeOf((*MockClient)(nil).ImplicitPipeliningEnabled))
-}
-
-// NumActiveConns mocks base method.
+// NumActiveConns mocks base method
 func (m *MockClient) NumActiveConns() int {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "NumActiveConns")
@@ -93,13 +78,13 @@ func (m *MockClient) NumActiveConns() int {
 	return ret0
 }
 
-// NumActiveConns indicates an expected call of NumActiveConns.
+// NumActiveConns indicates an expected call of NumActiveConns
 func (mr *MockClientMockRecorder) NumActiveConns() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NumActiveConns", reflect.TypeOf((*MockClient)(nil).NumActiveConns))
 }
 
-// PipeAppend mocks base method.
+// PipeAppend mocks base method
 func (m *MockClient) PipeAppend(arg0 redis.Pipeline, arg1 interface{}, arg2 string, arg3 ...interface{}) redis.Pipeline {
 	m.ctrl.T.Helper()
 	varargs := []interface{}{arg0, arg1, arg2}
@@ -111,32 +96,18 @@ func (m *MockClient) PipeAppend(arg0 redis.Pipeline, arg1 interface{}, arg2 stri
 	return ret0
 }
 
-// PipeAppend indicates an expected call of PipeAppend.
+// PipeAppend indicates an expected call of PipeAppend
 func (mr *MockClientMockRecorder) PipeAppend(arg0, arg1, arg2 interface{}, arg3 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{arg0, arg1, arg2}, arg3...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PipeAppend", reflect.TypeOf((*MockClient)(nil).PipeAppend), varargs...)
 }
 
-// PipeDo mocks base method.
-func (m *MockClient) PipeDo(arg0 context.Context, arg1 redis.Pipeline) error {
+// PipeScriptAppend mocks base method
+func (m *MockClient) PipeScriptAppend(arg0 redis.Pipeline, arg1 interface{}, arg2 radix.EvalScript, arg3 []string, arg4 ...string) redis.Pipeline {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PipeDo", arg0, arg1)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// PipeDo indicates an expected call of PipeDo.
-func (mr *MockClientMockRecorder) PipeDo(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PipeDo", reflect.TypeOf((*MockClient)(nil).PipeDo), arg0, arg1)
-}
-
-// PipeScriptAppend mocks base method.
-func (m *MockClient) PipeScriptAppend(arg0 redis.Pipeline, arg1 interface{}, arg2 radix.EvalScript, arg3 ...string) redis.Pipeline {
-	m.ctrl.T.Helper()
-	varargs := []interface{}{arg0, arg1, arg2}
-	for _, a := range arg3 {
+	varargs := []interface{}{arg0, arg1, arg2, arg3}
+	for _, a := range arg4 {
 		varargs = append(varargs, a)
 	}
 	ret := m.ctrl.Call(m, "PipeScriptAppend", varargs...)
@@ -144,9 +115,37 @@ func (m *MockClient) PipeScriptAppend(arg0 redis.Pipeline, arg1 interface{}, arg
 	return ret0
 }
 
-// PipeScriptAppend indicates an expected call of PipeScriptAppend.
-func (mr *MockClientMockRecorder) PipeScriptAppend(arg0, arg1, arg2 interface{}, arg3 ...interface{}) *gomock.Call {
+// PipeScriptAppend indicates an expected call of PipeScriptAppend
+func (mr *MockClientMockRecorder) PipeScriptAppend(arg0, arg1, arg2, arg3 interface{}, arg4 ...interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	varargs := append([]interface{}{arg0, arg1, arg2}, arg3...)
+	varargs := append([]interface{}{arg0, arg1, arg2, arg3}, arg4...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PipeScriptAppend", reflect.TypeOf((*MockClient)(nil).PipeScriptAppend), varargs...)
+}
+
+// PipeDo mocks base method
+func (m *MockClient) PipeDo(arg0 context.Context, arg1 redis.Pipeline) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PipeDo", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// PipeDo indicates an expected call of PipeDo
+func (mr *MockClientMockRecorder) PipeDo(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PipeDo", reflect.TypeOf((*MockClient)(nil).PipeDo), arg0, arg1)
+}
+
+// ImplicitPipeliningEnabled mocks base method
+func (m *MockClient) ImplicitPipeliningEnabled() bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ImplicitPipeliningEnabled")
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// ImplicitPipeliningEnabled indicates an expected call of ImplicitPipeliningEnabled
+func (mr *MockClientMockRecorder) ImplicitPipeliningEnabled() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ImplicitPipeliningEnabled", reflect.TypeOf((*MockClient)(nil).ImplicitPipeliningEnabled))
 }

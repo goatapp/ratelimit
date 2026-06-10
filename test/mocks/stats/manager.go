@@ -7,6 +7,7 @@ import (
 	gostats "github.com/lyft/gostats"
 
 	logger "github.com/goatapp/ratelimit/src/log"
+
 	"github.com/goatapp/ratelimit/src/stats"
 	"github.com/goatapp/ratelimit/src/utils"
 )
@@ -38,7 +39,7 @@ func (m *MockStatManager) NewServiceStats() stats.ServiceStats {
 
 func (m *MockStatManager) NewStats(key string) stats.RateLimitStats {
 	ret := stats.RateLimitStats{}
-	logger.Debug(context.Background(), fmt.Sprintf("outputting test gostats %s", key))
+	logger.Debug(context.Background(), fmt.Sprintf("outputing test gostats %s", key))
 	ret.Key = key
 	key = utils.SanitizeStatName(key)
 	ret.TotalHits = m.store.NewCounter(key + ".total_hits")
@@ -47,6 +48,15 @@ func (m *MockStatManager) NewStats(key string) stats.RateLimitStats {
 	ret.OverLimitWithLocalCache = m.store.NewCounter(key + ".over_limit_with_local_cache")
 	ret.WithinLimit = m.store.NewCounter(key + ".within_limit")
 	ret.ShadowMode = m.store.NewCounter(key + ".shadow_mode")
+
+	return ret
+}
+
+func (m *MockStatManager) NewDomainStats(key string) stats.DomainStats {
+	ret := stats.DomainStats{}
+	logger.Debug(context.Background(), fmt.Sprintf("outputing test domain stats %s", key))
+	ret.Key = key
+	ret.NotFound = m.store.NewCounter(key + ".domain_not_found")
 
 	return ret
 }
